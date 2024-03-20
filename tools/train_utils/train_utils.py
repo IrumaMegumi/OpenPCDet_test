@@ -46,7 +46,7 @@ def train_one_epoch(model, optimizer, train_loader,test_loader, model_func, lr_s
         optimizer.step()
         accumulated_iter += 1
         disp_dict.update({'train_loss': train_loss.item(), 'lr': cur_lr})
-        epoch_loss+=train_loss
+        epoch_loss+=train_loss.item()
         # log to console and tensorboard
         if rank == 0:
             pbar.update()
