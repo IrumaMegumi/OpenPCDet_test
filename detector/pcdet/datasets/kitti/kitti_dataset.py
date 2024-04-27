@@ -147,7 +147,7 @@ class KittiDataset(DatasetTemplate):
 
         return pts_valid_flag
 
-    def get_infos(self, num_workers=4, has_label=True, count_inside_pts=True, sample_id_list=None):
+    def  get_infos(self, num_workers=4, has_label=True, count_inside_pts=True, sample_id_list=None):
         import concurrent.futures as futures
 
         def process_single_scene(sample_idx):
@@ -455,12 +455,14 @@ def create_kitti_infos(dataset_cfg, class_names, data_path, save_path, workers=4
         pickle.dump(kitti_infos_train + kitti_infos_val, f)
     print('Kitti info trainval file is saved to %s' % trainval_filename)
 
+    '''
     dataset.set_split('test')
     kitti_infos_test = dataset.get_infos(num_workers=workers, has_label=False, count_inside_pts=False)
     with open(test_filename, 'wb') as f:
         pickle.dump(kitti_infos_test, f)
     print('Kitti info test file is saved to %s' % test_filename)
-
+    '''
+    
     print('---------------Start create groundtruth database for data augmentation---------------')
     dataset.set_split(train_split)
     dataset.create_groundtruth_database(train_filename, split=train_split)
