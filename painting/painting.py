@@ -242,7 +242,7 @@ class Painter:
                 points = self.get_lidar(sample_idx)
                 
                 # get segmentation score from network
-                scores_from_cam = self.get_score(sample_idx, "image_2/")
+                scores_from_cam = self.get_score(sample_idx, "image_2/") #生成的得分中，第一个是背景分，第二个以后是类别得分
                 # no cam_r files
                 #scores_from_cam_r = self.get_score(sample_idx, "image_3/")
                 # scores_from_cam: H * W * 4/5, each pixel have 4/5 scores(0: background, 1: bicycle, 2: car, 3: person, 4: rider)
@@ -253,7 +253,7 @@ class Painter:
                 # paint the point clouds
                 # points: N * 8
                 points = self.augment_lidar_class_scores_both(points, calib_fromfile,scores_from_cam)
-                np.save(self.save_path + ("%06d.npy" % idx), points)
+                np.save(self.save_path + ("%06d_v1.npy" % idx), points)
 
 if __name__ == '__main__':
     painter = Painter(SEG_NET)

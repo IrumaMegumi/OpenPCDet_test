@@ -65,12 +65,17 @@ class RoIHeadTemplate(nn.Module):
             return batch_dict
             
         batch_size = batch_dict['batch_size']
+
+        #前面RPN预测的anchor还有隶属于3个类别的分数
         batch_box_preds = batch_dict['batch_box_preds']
         batch_cls_preds = batch_dict['batch_cls_preds']
+
+        #Python调用神经网络模型时自带了NMS，但是直接读取模型文件时不会
         rois = batch_box_preds.new_zeros((batch_size, nms_config.NMS_POST_MAXSIZE, batch_box_preds.shape[-1]))
         roi_scores = batch_box_preds.new_zeros((batch_size, nms_config.NMS_POST_MAXSIZE))
         roi_labels = batch_box_preds.new_zeros((batch_size, nms_config.NMS_POST_MAXSIZE), dtype=torch.long)
 
+        #NMS过滤得到ROI
         for index in range(batch_size):
             if batch_dict.get('batch_index', None) is not None:
                 assert batch_cls_preds.shape.__len__() == 2
@@ -83,6 +88,7 @@ class RoIHeadTemplate(nn.Module):
 
             cur_roi_scores, cur_roi_labels = torch.max(cls_preds, dim=1)
 
+            #应用NMS，函数直接抄
             if nms_config.MULTI_CLASSES_NMS:
                 raise NotImplementedError
             else:

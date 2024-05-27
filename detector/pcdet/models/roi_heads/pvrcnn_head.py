@@ -15,8 +15,10 @@ class PVRCNNHead(RoIHeadTemplate):
         )
 
         GRID_SIZE = self.model_cfg.ROI_GRID_POOL.GRID_SIZE
+        # ROI pooling后的特征数，num_c_out为每个grid点有多少个特征
         pre_channel = GRID_SIZE * GRID_SIZE * GRID_SIZE * num_c_out
 
+        #不知道算在roi里面还是算在哪里，应该对应的是最终那几层了
         shared_fc_list = []
         for k in range(0, self.model_cfg.SHARED_FC.__len__()):
             shared_fc_list.extend([
@@ -30,7 +32,7 @@ class PVRCNNHead(RoIHeadTemplate):
                 shared_fc_list.append(nn.Dropout(self.model_cfg.DP_RATIO))
 
         self.shared_fc_layer = nn.Sequential(*shared_fc_list)
-
+        #最后两层
         self.cls_layers = self.make_fc_layers(
             input_channels=pre_channel, output_channels=self.num_class, fc_list=self.model_cfg.CLS_FC
         )
@@ -76,14 +78,19 @@ class PVRCNNHead(RoIHeadTemplate):
         """
         batch_size = batch_dict['batch_size']
         rois = batch_dict['rois']
+
+        #最远点采样点特征和最远点采样点坐标
         point_coords = batch_dict['point_coords']
         point_features = batch_dict['point_features']
 
+        #加权后点特征，后面的point_cls_scores想踢了，用pointpainting结果作为约束（小约束，前面点采样可以做大约束，需要参考注意力机制），目测效果还很不错......
         point_features = point_features * batch_dict['point_cls_scores'].view(-1, 1)
 
+        #Roi各个网格点 (batch*ROI_num)*num_grids*coords
         global_roi_grid_points, local_roi_grid_points = self.get_global_grid_points_of_roi(
             rois, grid_size=self.model_cfg.ROI_GRID_POOL.GRID_SIZE
         )  # (BxN, 6x6x6, 3)
+
         global_roi_grid_points = global_roi_grid_points.view(batch_size, -1, 3)  # (B, Nx6x6x6, 3)
 
         xyz = point_coords[:, 1:4]
@@ -94,6 +101,8 @@ class PVRCNNHead(RoIHeadTemplate):
 
         new_xyz = global_roi_grid_points.view(-1, 3)
         new_xyz_batch_cnt = xyz.new_zeros(batch_size).int().fill_(global_roi_grid_points.shape[1])
+
+        #roi pooling层，对216个点先聚合，后提取特征，每个grid有128个特征
         pooled_points, pooled_features = self.roi_grid_pool_layer(
             xyz=xyz.contiguous(),
             xyz_batch_cnt=xyz_batch_cnt,
@@ -136,7 +145,7 @@ class PVRCNNHead(RoIHeadTemplate):
         :param input_data: input dict
         :return:
         """
-
+        #在此函数中对batch_dict处理，返回batch_dict，增加roi，roi_score和roi_label
         targets_dict = self.proposal_layer(
             batch_dict, nms_config=self.model_cfg.NMS_CONFIG['TRAIN' if self.training else 'TEST']
         )
@@ -147,7 +156,7 @@ class PVRCNNHead(RoIHeadTemplate):
                 batch_dict['rois'] = targets_dict['rois']
                 batch_dict['roi_labels'] = targets_dict['roi_labels']
 
-        # RoI aware pooling
+        # RoI aware pooling，得到的是pool后每个点的特征
         pooled_features = self.roi_grid_pool(batch_dict)  # (BxN, 6x6x6, C)
 
         grid_size = self.model_cfg.ROI_GRID_POOL.GRID_SIZE
@@ -156,6 +165,7 @@ class PVRCNNHead(RoIHeadTemplate):
             contiguous().view(batch_size_rcnn, -1, grid_size, grid_size, grid_size)  # (BxN, C, 6, 6, 6)
 
         shared_features = self.shared_fc_layer(pooled_features.view(batch_size_rcnn, -1, 1))
+        #每个框类别的置信度和回归参数
         rcnn_cls = self.cls_layers(shared_features).transpose(1, 2).contiguous().squeeze(dim=1)  # (B, 1 or 2)
         rcnn_reg = self.reg_layers(shared_features).transpose(1, 2).contiguous().squeeze(dim=1)  # (B, C)
 

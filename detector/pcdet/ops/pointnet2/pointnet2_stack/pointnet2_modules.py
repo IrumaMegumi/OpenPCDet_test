@@ -43,12 +43,14 @@ class StackSAModuleMSG(nn.Module):
 
         assert len(radii) == len(nsamples) == len(mlps)
 
-        self.groupers = nn.ModuleList()
+        self.groupers = nn.ModuleList() #存储模块的
         self.mlps = nn.ModuleList()
         for i in range(len(radii)):
             radius = radii[i]
             nsample = nsamples[i]
+            #球查询和分组
             self.groupers.append(pointnet2_utils.QueryAndGroup(radius, nsample, use_xyz=use_xyz))
+            #搭建前馈感知器
             mlp_spec = mlps[i]
             if use_xyz:
                 mlp_spec[0] += 3

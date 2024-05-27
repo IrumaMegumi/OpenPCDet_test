@@ -16,7 +16,7 @@ from pcdet.models import build_network, model_fn_decorator
 from pcdet.utils import common_utils
 from tools.train_utils.optimization import build_optimizer, build_scheduler
 from tools.train_utils.train_utils import train_model
-
+from tqdm import tqdm
 
 def parse_config():
     parser = argparse.ArgumentParser(description='arg parser')
@@ -24,7 +24,7 @@ def parse_config():
 
     parser.add_argument('--batch_size', type=int, default=1, required=False, help='batch size for training') #建议自己指定
     parser.add_argument('--epochs', type=int, default=None, required=False, help='number of epochs to train for')
-    parser.add_argument('--workers', type=int, default=8, help='number of workers for dataloader')
+    parser.add_argument('--workers', type=int, default=0, help='number of workers for dataloader')
     parser.add_argument('--extra_tag', type=str, default='default', help='extra tag for this experiment')
     parser.add_argument('--ckpt', type=str, default=None, help='checkpoint to start from')
     parser.add_argument('--pretrained_model', type=str, default=None, help='pretrained_model')
@@ -56,6 +56,8 @@ def parse_config():
 
 
 def main():
+    #注意观察这里的参数有无变动
+    # TODO：填写pointpainting的yaml
     args, cfg = parse_config()
     if args.launcher == 'none':
         dist_train = False
@@ -112,6 +114,11 @@ def main():
         merge_all_iters_to_one_epoch=args.merge_all_iters_to_one_epoch,
         total_epochs=args.epochs
     )
+
+    #训练集模型输出探针检查
+    # for data_dict in tqdm(train_loader,desc="Loading training data",leave=False):
+    #     pass
+
     # create test dataloader
     test_set, test_loader, sampler = build_dataloader(
         dataset_cfg=cfg.DATA_CONFIG,
@@ -119,7 +126,10 @@ def main():
         batch_size=args.batch_size,
         dist=dist_train, workers=args.workers, logger=logger, training=False
     )
-
+    #测试集模型输出探针检查
+    # for data_dict in tqdm(test_loader,desc="Loading training data",leave=False):
+    #     pass
+    
     model = build_network(model_cfg=cfg.MODEL, num_class=len(cfg.CLASS_NAMES), dataset=train_set)
     if args.sync_bn:
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)

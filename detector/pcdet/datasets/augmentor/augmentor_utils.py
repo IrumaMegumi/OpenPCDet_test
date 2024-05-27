@@ -5,7 +5,7 @@ from ...utils import common_utils
 from ...utils import box_utils
 
 
-def random_flip_along_x(gt_boxes, points, return_flip=False, enable=None):
+def random_flip_along_x(gt_boxes, points, painted_points=None,return_flip=False, enable=None):
     """
     Args:
         gt_boxes: (N, 7 + C), [x, y, z, dx, dy, dz, heading, [vx], [vy]]
@@ -18,12 +18,13 @@ def random_flip_along_x(gt_boxes, points, return_flip=False, enable=None):
         gt_boxes[:, 1] = -gt_boxes[:, 1]
         gt_boxes[:, 6] = -gt_boxes[:, 6]
         points[:, 1] = -points[:, 1]
-        
+        if painted_points is not None:
+            painted_points[:,1]=-painted_points[:,1]
         if gt_boxes.shape[1] > 7:
             gt_boxes[:, 8] = -gt_boxes[:, 8]
     if return_flip:
-        return gt_boxes, points, enable
-    return gt_boxes, points
+        return gt_boxes, points, painted_points, enable
+    return gt_boxes, points,painted_points
 
 
 def random_flip_along_y(gt_boxes, points, return_flip=False, enable=None):
@@ -47,7 +48,7 @@ def random_flip_along_y(gt_boxes, points, return_flip=False, enable=None):
     return gt_boxes, points
 
 
-def global_rotation(gt_boxes, points, rot_range, return_rot=False, noise_rotation=None):
+def global_rotation(gt_boxes, points, rot_range, painted_points=None,return_rot=False, noise_rotation=None):
     """
     Args:
         gt_boxes: (N, 7 + C), [x, y, z, dx, dy, dz, heading, [vx], [vy]]
@@ -58,6 +59,8 @@ def global_rotation(gt_boxes, points, rot_range, return_rot=False, noise_rotatio
     if noise_rotation is None: 
         noise_rotation = np.random.uniform(rot_range[0], rot_range[1])
     points = common_utils.rotate_points_along_z(points[np.newaxis, :, :], np.array([noise_rotation]))[0]
+    if painted_points is not None:
+        painted_points=common_utils.rotate_points_along_z(painted_points[np.newaxis, :, :],np.array([noise_rotation]))[0]
     gt_boxes[:, 0:3] = common_utils.rotate_points_along_z(gt_boxes[np.newaxis, :, 0:3], np.array([noise_rotation]))[0]
     gt_boxes[:, 6] += noise_rotation
     if gt_boxes.shape[1] > 7:
@@ -67,11 +70,11 @@ def global_rotation(gt_boxes, points, rot_range, return_rot=False, noise_rotatio
         )[0][:, 0:2]
 
     if return_rot:
-        return gt_boxes, points, noise_rotation
-    return gt_boxes, points
+        return gt_boxes, points,painted_points, noise_rotation
+    return gt_boxes, points,painted_points
 
 
-def global_scaling(gt_boxes, points, scale_range, return_scale=False):
+def global_scaling(gt_boxes, points, scale_range, painted_points=None,return_scale=False):
     """
     Args:
         gt_boxes: (N, 7), [x, y, z, dx, dy, dz, heading]
@@ -83,15 +86,17 @@ def global_scaling(gt_boxes, points, scale_range, return_scale=False):
         return gt_boxes, points
     noise_scale = np.random.uniform(scale_range[0], scale_range[1])
     points[:, :3] *= noise_scale
+    if painted_points is not None:
+        painted_points[:,:3] *=noise_scale
     gt_boxes[:, :6] *= noise_scale
     if gt_boxes.shape[1] > 7:
         gt_boxes[:, 7:] *= noise_scale
         
     if return_scale:
-        return gt_boxes, points, noise_scale
-    return gt_boxes, points
+        return gt_boxes, points, painted_points,noise_scale
+    return gt_boxes, points,painted_points
 
-def global_scaling_with_roi_boxes(gt_boxes, roi_boxes, points, scale_range, return_scale=False):
+def global_scaling_with_roi_boxes(gt_boxes, roi_boxes, points, scale_range, painted_points=None,return_scale=False):
     """
     Args:
         gt_boxes: (N, 7), [x, y, z, dx, dy, dz, heading]
@@ -103,11 +108,13 @@ def global_scaling_with_roi_boxes(gt_boxes, roi_boxes, points, scale_range, retu
         return gt_boxes, points
     noise_scale = np.random.uniform(scale_range[0], scale_range[1])
     points[:, :3] *= noise_scale
+    if painted_points is not None:
+        painted_points[:, :3] *= noise_scale
     gt_boxes[:, :6] *= noise_scale
     roi_boxes[:,:, [0,1,2,3,4,5,7,8]] *= noise_scale
     if return_scale:
-        return gt_boxes,roi_boxes, points, noise_scale
-    return gt_boxes, roi_boxes, points
+        return gt_boxes,roi_boxes, points, painted_points,noise_scale
+    return gt_boxes, roi_boxes, points,painted_points
 
 
 def random_image_flip_horizontal(image, depth_map, gt_boxes, calib):

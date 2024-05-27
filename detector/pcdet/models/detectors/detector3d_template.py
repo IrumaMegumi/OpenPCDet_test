@@ -33,10 +33,14 @@ class Detector3DTemplate(nn.Module):
         self.global_step += 1
 
     def build_networks(self):
+        #模型的参数信息，forward里面还有一个data_dict，用于存储数据用的
+        #这里开始需要手动设置两条链路重新大改
+        #TODO: num_point_features和num_rawpoint_features是否需要改动为双链路
         model_info_dict = {
             'module_list': [],
             'num_rawpoint_features': self.dataset.point_feature_encoder.num_point_features,
             'num_point_features': self.dataset.point_feature_encoder.num_point_features,
+            'num_painted_point_features':self.dataset.painted_feature_encoder.num_point_features,
             'grid_size': self.dataset.grid_size,
             'point_cloud_range': self.dataset.point_cloud_range,
             'voxel_size': self.dataset.voxel_size,
@@ -48,7 +52,8 @@ class Detector3DTemplate(nn.Module):
             )
             self.add_module(module_name, module)
         return model_info_dict['module_list']
-
+    
+    #应该不需要修改
     def build_vfe(self, model_info_dict):
         if self.model_cfg.get('VFE', None) is None:
             return None, model_info_dict
@@ -138,6 +143,7 @@ class Detector3DTemplate(nn.Module):
         model_info_dict['module_list'].append(dense_head_module)
         return dense_head_module, model_info_dict
 
+    #对应的是predicted weighting module，预测点的权重，后续考虑使用pointpainting代替
     def build_point_head(self, model_info_dict):
         if self.model_cfg.get('POINT_HEAD', None) is None:
             return None, model_info_dict
@@ -146,7 +152,8 @@ class Detector3DTemplate(nn.Module):
             num_point_features = model_info_dict['num_point_features_before_fusion']
         else:
             num_point_features = model_info_dict['num_point_features']
-
+        
+        #从体素、BEV等地方提取到的特征
         point_head_module = dense_heads.__all__[self.model_cfg.POINT_HEAD.NAME](
             model_cfg=self.model_cfg.POINT_HEAD,
             input_channels=num_point_features,

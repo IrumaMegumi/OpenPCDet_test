@@ -62,7 +62,7 @@ class VoxelGeneratorWrapper():
 
 
 class DataProcessor(object):
-    def __init__(self, processor_configs, point_cloud_range, training, num_point_features):
+    def __init__(self, processor_configs, point_cloud_range, training, num_point_features,use_painted_points=False):
         self.point_cloud_range = point_cloud_range
         self.training = training
         self.num_point_features = num_point_features
@@ -71,6 +71,8 @@ class DataProcessor(object):
         self.data_processor_queue = []
 
         self.voxel_generator = None
+        #是否针对painted points处理
+        self.use_painted_points=use_painted_points
 
         for cur_cfg in processor_configs:
             cur_processor = getattr(self, cur_cfg.NAME)(config=cur_cfg)
@@ -79,10 +81,16 @@ class DataProcessor(object):
     def mask_points_and_boxes_outside_range(self, data_dict=None, config=None):
         if data_dict is None:
             return partial(self.mask_points_and_boxes_outside_range, config=config)
-
-        if data_dict.get('points', None) is not None:
-            mask = common_utils.mask_points_by_range(data_dict['points'], self.point_cloud_range)
-            data_dict['points'] = data_dict['points'][mask]
+        
+        #处理painted_points
+        if self.use_painted_points==True:
+            if data_dict.get('painted_points',None) is not None:
+                mask = common_utils.mask_points_by_range(data_dict['painted_points'], self.point_cloud_range)
+                data_dict['painted_points'] = data_dict['painted_points'][mask]
+        else:
+            if data_dict.get('points',None) is not None:
+                mask = common_utils.mask_points_by_range(data_dict['points'], self.point_cloud_range)
+                data_dict['points'] = data_dict['points'][mask]
 
         if data_dict.get('gt_boxes', None) is not None and config.REMOVE_OUTSIDE_BOXES and self.training:
             mask = box_utils.mask_boxes_outside_range_numpy(
@@ -103,6 +111,7 @@ class DataProcessor(object):
             data_dict['points'] = points
 
         return data_dict
+        
 
     def transform_points_to_voxels_placeholder(self, data_dict=None, config=None):
         # just calculate grid size

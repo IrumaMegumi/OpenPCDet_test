@@ -1,16 +1,15 @@
 import copy
 import pickle
-
+import os
 import numpy as np
+from open3d import *
 from skimage import io
-
-from . import kitti_utils
 from ...ops.roiaware_pool3d import roiaware_pool3d_utils
 from ...utils import box_utils, calibration_kitti, common_utils, object3d_kitti
 from ..dataset import DatasetTemplate
 
-
-class KittiDataset(DatasetTemplate):
+#采用Pointpainting处理融合后的点云数据
+class PaintedKittiDataset(DatasetTemplate):
     def __init__(self, dataset_cfg, class_names, training=True, root_path=None, logger=None):
         """
         Args:
@@ -65,50 +64,37 @@ class KittiDataset(DatasetTemplate):
         assert lidar_file.exists()
         return np.fromfile(str(lidar_file), dtype=np.float32).reshape(-1, 4)
 
-    def get_image(self, idx):
-        """
-        Loads image for a sample
-        Args:
-            idx: int, Sample index
-        Returns:
-            image: (H, W, 3), RGB Image
-        """
-        img_file = self.root_split_path / 'image_2' / ('%s.png' % idx)
-        assert img_file.exists()
-        image = io.imread(img_file)
-        image = image.astype(np.float32)
-        image /= 255.0
-        return image
-
     def get_image_shape(self, idx):
         img_file = self.root_split_path / 'image_2' / ('%s.png' % idx)
         assert img_file.exists()
         return np.array(io.imread(img_file).shape[:2], dtype=np.int32)
+
+    def get_painted_lidar(self, idx):
+        lidar_file = self.root_split_path / 'painted_lidar' / ('%s.npy' % idx)
+        assert lidar_file.exists()
+        return np.load(lidar_file)
 
     def get_label(self, idx):
         label_file = self.root_split_path / 'label_2' / ('%s.txt' % idx)
         assert label_file.exists()
         return object3d_kitti.get_objects_from_label(label_file)
 
-    def get_depth_map(self, idx):
-        """
-        Loads depth map for a sample
-        Args:
-            idx: str, Sample index
-        Returns:
-            depth: (H, W), Depth map
-        """
-        depth_file = self.root_split_path / 'depth_2' / ('%s.png' % idx)
-        assert depth_file.exists()
-        depth = io.imread(depth_file)
-        depth = depth.astype(np.float32)
-        depth /= 256.0
-        return depth
-
     def get_calib(self, idx):
         calib_file = self.root_split_path / 'calib' / ('%s.txt' % idx)
         assert calib_file.exists()
         return calibration_kitti.Calibration(calib_file)
+    
+    def get_calib_fromfile(self, idx):
+        calib_file = self.root_split_path / 'calib' / ('%s.txt' % idx)
+        assert calib_file.exists()
+        calib = calibration_kitti.get_calib_from_file(calib_file)
+        calib['P2'] = np.concatenate([calib['P2'], np.array([[0., 0., 0., 1.]])], axis=0)
+        calib['P3'] = np.concatenate([calib['P3'], np.array([[0., 0., 0., 1.]])], axis=0)
+        calib['R0_rect'] = np.zeros([4, 4], dtype=calib['R0'].dtype)
+        calib['R0_rect'][3, 3] = 1.
+        calib['R0_rect'][:3, :3] = calib['R0']
+        calib['Tr_velo2cam'] = np.concatenate([calib['Tr_velo2cam'], np.array([[0., 0., 0., 1.]])], axis=0)
+        return calib
 
     def get_road_plane(self, idx):
         plane_file = self.root_split_path / 'planes' / ('%s.txt' % idx)
@@ -147,28 +133,29 @@ class KittiDataset(DatasetTemplate):
 
         return pts_valid_flag
 
-    def  get_infos(self, num_workers=4, has_label=True, count_inside_pts=True, sample_id_list=None):
+    def get_infos(self, num_workers=4, has_label=True, count_inside_pts=True, sample_id_list=None):
         import concurrent.futures as futures
 
         def process_single_scene(sample_idx):
             print('%s sample_idx: %s' % (self.split, sample_idx))
             info = {}
-            pc_info = {'num_features': 4, 'lidar_idx': sample_idx}
+            pc_info = {'num_features': 4, 'lidar_idx': sample_idx} #TODO:特征数量待定，是否要改成8
             info['point_cloud'] = pc_info
 
             image_info = {'image_idx': sample_idx, 'image_shape': self.get_image_shape(sample_idx)}
             info['image'] = image_info
-            calib = self.get_calib(sample_idx)
 
+            #标定信息
+            calib = self.get_calib(sample_idx)
             P2 = np.concatenate([calib.P2, np.array([[0., 0., 0., 1.]])], axis=0)
             R0_4x4 = np.zeros([4, 4], dtype=calib.R0.dtype)
             R0_4x4[3, 3] = 1.
             R0_4x4[:3, :3] = calib.R0
             V2C_4x4 = np.concatenate([calib.V2C, np.array([[0., 0., 0., 1.]])], axis=0)
             calib_info = {'P2': P2, 'R0_rect': R0_4x4, 'Tr_velo_to_cam': V2C_4x4}
-
             info['calib'] = calib_info
-
+            
+            #处理雷达的label信息
             if has_label:
                 obj_list = self.get_label(sample_idx)
                 annotations = {}
@@ -198,6 +185,7 @@ class KittiDataset(DatasetTemplate):
                 annotations['gt_boxes_lidar'] = gt_boxes_lidar
 
                 info['annos'] = annotations
+                #处理label结束
 
                 if count_inside_pts:
                     points = self.get_lidar(sample_idx)
@@ -213,7 +201,8 @@ class KittiDataset(DatasetTemplate):
                         flag = box_utils.in_hull(pts_fov[:, 0:3], corners_lidar[k])
                         num_points_in_gt[k] = flag.sum()
                     annotations['num_points_in_gt'] = num_points_in_gt
-
+                    #似乎并没有把雷达.bin数据读进去啊
+                    #info此时包含：id,点的特征数量，图像的大小，annotations中的所有与label有关的内容
             return info
 
         sample_id_list = sample_id_list if sample_id_list is not None else self.sample_id_list
@@ -225,7 +214,7 @@ class KittiDataset(DatasetTemplate):
         import torch
 
         database_save_path = Path(self.root_path) / ('gt_database' if split == 'train' else ('gt_database_%s' % split))
-        db_info_save_path = Path(self.root_path) / ('kitti_dbinfos_%s.pkl' % split)
+        db_info_save_path = Path(self.root_path) / ('painted_kitti_dbinfos_%s.pkl' % split)
 
         database_save_path.mkdir(parents=True, exist_ok=True)
         all_db_infos = {}
@@ -237,7 +226,8 @@ class KittiDataset(DatasetTemplate):
             print('gt_database sample: %d/%d' % (k + 1, len(infos)))
             info = infos[k]
             sample_idx = info['point_cloud']['lidar_idx']
-            points = self.get_lidar(sample_idx)
+            # points = self.get_lidar(sample_idx)
+            points = self.get_painted_lidar(sample_idx)
             annos = info['annos']
             names = annos['name']
             difficulty = annos['difficulty']
@@ -252,11 +242,13 @@ class KittiDataset(DatasetTemplate):
             for i in range(num_obj):
                 filename = '%s_%s_%d.bin' % (sample_idx, names[i], i)
                 filepath = database_save_path / filename
-                gt_points = points[point_indices[i] > 0]
+                gt_points = points[point_indices[i] > 0].astype(np.float32)
+                print(gt_points.dtype)
 
                 gt_points[:, :3] -= gt_boxes[i, :3]
                 with open(filepath, 'w') as f:
                     gt_points.tofile(f)
+                    print(gt_points.shape)
 
                 if (used_classes is None) or names[i] in used_classes:
                     db_path = str(filepath.relative_to(self.root_path))  # gt_database/xxxxx.bin
@@ -308,7 +300,7 @@ class KittiDataset(DatasetTemplate):
                 return pred_dict
 
             calib = batch_dict['calib'][batch_index]
-            image_shape = batch_dict['image_shape'][batch_index].cpu().numpy()
+            image_shape = batch_dict['image_shape'][batch_index]
             pred_boxes_camera = box_utils.boxes3d_lidar_to_kitti_camera(pred_boxes, calib)
             pred_boxes_img = box_utils.boxes3d_kitti_camera_to_imageboxes(
                 pred_boxes_camera, calib, image_shape=image_shape
@@ -369,16 +361,15 @@ class KittiDataset(DatasetTemplate):
         return len(self.kitti_infos)
 
     def __getitem__(self, index):
-        # index = 4
         if self._merge_all_iters_to_one_epoch:
             index = index % len(self.kitti_infos)
 
         info = copy.deepcopy(self.kitti_infos[index])
 
-        sample_idx = info['point_cloud']['lidar_idx']
-        img_shape = info['image']['image_shape']
-        calib = self.get_calib(sample_idx)
-        get_item_list = self.dataset_cfg.get('GET_ITEM_LIST', ['points'])
+        sample_idx = info['point_cloud']['lidar_idx'] #数据集索引号
+        img_shape = info['image']['image_shape'] #图像大小
+        calib = self.get_calib(sample_idx) #标定矩阵
+        get_item_list = self.dataset_cfg.get('GET_ITEM_LIST', ['points']) 
 
         input_dict = {
             'frame_id': sample_idx,
@@ -397,6 +388,7 @@ class KittiDataset(DatasetTemplate):
                 'gt_names': gt_names,
                 'gt_boxes': gt_boxes_lidar
             })
+
             if "gt_boxes2d" in get_item_list:
                 input_dict['gt_boxes2d'] = annos["bbox"]
 
@@ -411,6 +403,15 @@ class KittiDataset(DatasetTemplate):
                 fov_flag = self.get_fov_flag(pts_rect, img_shape, calib)
                 points = points[fov_flag]
             input_dict['points'] = points
+            
+        #获取painted points
+        if "painted_points" in get_item_list:
+            painted_points = self.get_painted_lidar(sample_idx)
+            if self.dataset_cfg.FOV_POINTS_ONLY:
+                pts_rect = calib.lidar_to_rect(painted_points[:, 0:3])
+                fov_flag = self.get_fov_flag(pts_rect, img_shape, calib)
+                painted_points = painted_points[fov_flag]
+            input_dict['painted_points'] = painted_points
 
         if "images" in get_item_list:
             input_dict['images'] = self.get_image(sample_idx)
@@ -425,17 +426,18 @@ class KittiDataset(DatasetTemplate):
         data_dict = self.prepare_data(data_dict=input_dict) #所有预处理都在这里
 
         data_dict['image_shape'] = img_shape
+        #data_dict为最终传入的东西，not info，特别注意一下
         return data_dict
 
 
 def create_kitti_infos(dataset_cfg, class_names, data_path, save_path, workers=4):
-    dataset = KittiDataset(dataset_cfg=dataset_cfg, class_names=class_names, root_path=data_path, training=False)
+    dataset = PaintedKittiDataset(dataset_cfg=dataset_cfg, class_names=class_names, root_path=data_path, training=False)
     train_split, val_split = 'train', 'val'
 
-    train_filename = save_path / ('kitti_infos_%s.pkl' % train_split)
-    val_filename = save_path / ('kitti_infos_%s.pkl' % val_split)
-    trainval_filename = save_path / 'kitti_infos_trainval.pkl'
-    test_filename = save_path / 'kitti_infos_test.pkl'
+    train_filename = save_path / ('painted_kitti_infos_%s.pkl' % train_split)
+    val_filename = save_path / ('painted_kitti_infos_%s.pkl' % val_split)
+    trainval_filename = save_path / 'painted_kitti_infos_trainval.pkl'
+    #test_filename = save_path / 'kitti_infos_test.pkl'
 
     print('---------------Start to generate data infos---------------')
 
@@ -443,13 +445,13 @@ def create_kitti_infos(dataset_cfg, class_names, data_path, save_path, workers=4
     kitti_infos_train = dataset.get_infos(num_workers=workers, has_label=True, count_inside_pts=True)
     with open(train_filename, 'wb') as f:
         pickle.dump(kitti_infos_train, f)
-    print('Kitti info train file is saved to %s' % train_filename)
+    print('Painted Kitti info train file is saved to %s' % train_filename)
 
     dataset.set_split(val_split)
     kitti_infos_val = dataset.get_infos(num_workers=workers, has_label=True, count_inside_pts=True)
     with open(val_filename, 'wb') as f:
         pickle.dump(kitti_infos_val, f)
-    print('Kitti info val file is saved to %s' % val_filename)
+    print('Painted Kitti info val file is saved to %s' % val_filename)
 
     with open(trainval_filename, 'wb') as f:
         pickle.dump(kitti_infos_train + kitti_infos_val, f)
@@ -476,7 +478,7 @@ if __name__ == '__main__':
         import yaml
         from pathlib import Path
         from easydict import EasyDict
-        dataset_cfg = EasyDict(yaml.safe_load(open(sys.argv[2])))
+        dataset_cfg = EasyDict(yaml.load(open(sys.argv[2]),Loader=yaml.CLoader))
         ROOT_DIR = (Path(__file__).resolve().parent / '../../../').resolve()
         create_kitti_infos(
             dataset_cfg=dataset_cfg,

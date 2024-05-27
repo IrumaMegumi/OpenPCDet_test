@@ -173,6 +173,7 @@ class VoxelSetAbstraction(nn.Module):
         self.num_point_features = self.model_cfg.NUM_OUTPUT_FEATURES
         self.num_point_features_before_fusion = c_in
 
+        
     def interpolate_from_bev_features(self, keypoints, bev_features, batch_size, bev_stride):
         """
         Args:
@@ -372,7 +373,7 @@ class VoxelSetAbstraction(nn.Module):
             pooled_features = self.aggregate_keypoint_features_from_one_source(
                 batch_size=batch_size, aggregate_func=self.SA_rawpoints,
                 xyz=raw_points[:, 1:4],
-                xyz_features=raw_points[:, 4:].contiguous() if raw_points.shape[1] > 4 else None,
+                xyz_features=raw_points[:, 4:].contiguous() if raw_points.shape[1] > 4 else None, #pointpainting可以融进去
                 xyz_bs_idxs=raw_points[:, 0],
                 new_xyz=new_xyz, new_xyz_batch_cnt=new_xyz_batch_cnt,
                 filter_neighbors_with_roi=self.model_cfg.SA_LAYER['raw_points'].get('FILTER_NEIGHBOR_WITH_ROI', False),

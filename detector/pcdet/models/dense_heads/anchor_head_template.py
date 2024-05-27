@@ -16,7 +16,6 @@ class AnchorHeadTemplate(nn.Module):
         self.class_names = class_names
         self.predict_boxes_when_training = predict_boxes_when_training
         self.use_multihead = self.model_cfg.get('USE_MULTIHEAD', False)
-
         anchor_target_cfg = self.model_cfg.TARGET_ASSIGNER_CONFIG
         self.box_coder = getattr(box_coder_utils, anchor_target_cfg.BOX_CODER)(
             num_dir_bins=anchor_target_cfg.get('NUM_DIR_BINS', 6),
@@ -24,6 +23,7 @@ class AnchorHeadTemplate(nn.Module):
         )
 
         anchor_generator_cfg = self.model_cfg.ANCHOR_GENERATOR_CONFIG
+        #生成建议的anchor
         anchors, self.num_anchors_per_location = self.generate_anchors(
             anchor_generator_cfg, grid_size=grid_size, point_cloud_range=point_cloud_range,
             anchor_ndim=self.box_coder.code_size
@@ -40,6 +40,7 @@ class AnchorHeadTemplate(nn.Module):
             anchor_range=point_cloud_range,
             anchor_generator_config=anchor_generator_cfg
         )
+        #feature_map_size应和前面使用spconv下采样后的尺寸保持一致
         feature_map_size = [grid_size[:2] // config['feature_map_stride'] for config in anchor_generator_cfg]
         anchors_list, num_anchors_per_location_list = anchor_generator.generate_anchors(feature_map_size)
 
@@ -69,7 +70,8 @@ class AnchorHeadTemplate(nn.Module):
         else:
             raise NotImplementedError
         return target_assigner
-
+    
+    #并没有在这里直接调用，应该对应的是类似于两阶段算法的经典损失函数
     def build_losses(self, losses_cfg):
         self.add_module(
             'cls_loss_func',

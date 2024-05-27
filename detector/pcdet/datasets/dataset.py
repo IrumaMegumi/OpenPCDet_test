@@ -28,13 +28,25 @@ class DatasetTemplate(torch_data.Dataset):
             self.dataset_cfg.POINT_FEATURE_ENCODING,
             point_cloud_range=self.point_cloud_range
         )
+        if 'PAINTED_POINT_FEATURE_ENCODING' in self.dataset_cfg:
+            self.painted_feature_encoder=PointFeatureEncoder(
+                self.dataset_cfg.PAINTED_POINT_FEATURE_ENCODING,
+                point_cloud_range=self.point_cloud_range,
+                to_painted_point=True
+            )
         self.data_augmentor = DataAugmentor(
             self.root_path, self.dataset_cfg.DATA_AUGMENTOR, self.class_names, logger=self.logger
         ) if self.training else None
         self.data_processor = DataProcessor(
             self.dataset_cfg.DATA_PROCESSOR, point_cloud_range=self.point_cloud_range,
-            training=self.training, num_point_features=self.point_feature_encoder.num_point_features
+            training=self.training, num_point_features=self.point_feature_encoder.num_point_features,use_painted_points=False
         )
+
+        if 'PAINTED_POINT_PROCESSOR' in self.dataset_cfg:
+            self.painted_point_processor=DataProcessor(
+                self.dataset_cfg.PAINTED_POINT_PROCESSOR, point_cloud_range=self.point_cloud_range,
+                training=self.training, num_point_features=self.painted_feature_encoder.num_point_features,use_painted_points=True
+            )
 
         self.grid_size = self.data_processor.grid_size
         self.voxel_size = self.data_processor.voxel_size
@@ -182,6 +194,7 @@ class DatasetTemplate(torch_data.Dataset):
             
             if 'calib' in data_dict:
                 calib = data_dict['calib']
+
             data_dict = self.data_augmentor.forward(
                 data_dict={
                     **data_dict,
@@ -201,20 +214,24 @@ class DatasetTemplate(torch_data.Dataset):
 
             if data_dict.get('gt_boxes2d', None) is not None:
                 data_dict['gt_boxes2d'] = data_dict['gt_boxes2d'][selected]
+        
+        #双链路数据编码
+        data_dict = self.point_feature_encoder.forward(data_dict)
+        if data_dict.get('painted_points',None) is not None:
+            data_dict=self.painted_feature_encoder.forward(data_dict)
 
-        if data_dict.get('points', None) is not None:
-            data_dict = self.point_feature_encoder.forward(data_dict)
-
+        #双链路预处理，对painted_point不作体素转换
+        #TODO:预处理方式没对齐，严查！
         data_dict = self.data_processor.forward(
             data_dict=data_dict
         )
-
+        if data_dict.get('painted_points',None) is not None:
+            data_dict=self.painted_point_processor.forward(data_dict)
         if self.training and len(data_dict['gt_boxes']) == 0:
             new_index = np.random.randint(self.__len__())
             return self.__getitem__(new_index)
 
-        data_dict.pop('gt_names', None)
-
+        data_dict.pop('gt_names', None)      
         return data_dict
 
     @staticmethod
@@ -323,3 +340,13 @@ class DatasetTemplate(torch_data.Dataset):
 
         ret['batch_size'] = batch_size * batch_size_ratio
         return ret
+    def check_data(self,data_dict):
+        points=data_dict["points"][:,:3]
+        painted_points=data_dict['painted_points'][:,:3]
+        def arrays_are_contained(set_array1, array2):
+            for sub_array in array2:
+                if tuple(sub_array) not in set_array1:
+                    return False
+            return True
+        result=arrays_are_contained(points,painted_points)
+        print(result)

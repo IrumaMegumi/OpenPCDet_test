@@ -20,8 +20,9 @@ class AnchorGenerator(object):
         num_anchors_per_location = []
         for grid_size, anchor_size, anchor_rotation, anchor_height, align_center in zip(
                 grid_sizes, self.anchor_sizes, self.anchor_rotations, self.anchor_heights, self.align_center):
-
+            #特征图上每个点对应2个anchor，每个anchor的旋转角度不同
             num_anchors_per_location.append(len(anchor_rotation) * len(anchor_size) * len(anchor_height))
+            #anchor_range对应point_cloud_range，相当于把特征图映射到原图，grid_size对应特征图尺寸
             if align_center:
                 x_stride = (self.anchor_range[3] - self.anchor_range[0]) / grid_size[0]
                 y_stride = (self.anchor_range[4] - self.anchor_range[1]) / grid_size[1]
@@ -31,6 +32,7 @@ class AnchorGenerator(object):
                 y_stride = (self.anchor_range[4] - self.anchor_range[1]) / (grid_size[1] - 1)
                 x_offset, y_offset = 0, 0
 
+            #映射到原图对应点上，在原图对应位置生成anchor
             x_shifts = torch.arange(
                 self.anchor_range[0] + x_offset, self.anchor_range[3] + 1e-5, step=x_stride, dtype=torch.float32,
             ).cuda()
@@ -57,6 +59,7 @@ class AnchorGenerator(object):
             #anchors = anchors.view(-1, anchors.shape[-1])
             anchors[..., 2] += anchors[..., 5] / 2  # shift to box centers
             all_anchors.append(anchors)
+        #生成的anchor是相对于原图的
         return all_anchors, num_anchors_per_location
 
 

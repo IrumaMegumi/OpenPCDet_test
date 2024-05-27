@@ -372,18 +372,17 @@ class DataBaseSampler(object):
         gt_boxes = data_dict['gt_boxes'][gt_boxes_mask]
         gt_names = data_dict['gt_names'][gt_boxes_mask]
         points = data_dict['points']
+        painted_points=data_dict['painted_points']
         if self.sampler_cfg.get('USE_ROAD_PLANE', False) and mv_height is None:
             sampled_gt_boxes, mv_height = self.put_boxes_on_road_planes(
                 sampled_gt_boxes, data_dict['road_plane'], data_dict['calib']
             )
             data_dict.pop('calib')
             data_dict.pop('road_plane')
-
         obj_points_list = []
 
         # convert sampled 3D boxes to image plane
         img_aug_gt_dict = self.initilize_image_aug_dict(data_dict, gt_boxes_mask)
-
         if self.use_shared_memory:
             gt_database_data = SharedArray.attach(f"shm://{self.gt_database_data_key}")
             gt_database_data.setflags(write=0)
@@ -396,12 +395,10 @@ class DataBaseSampler(object):
                 obj_points = copy.deepcopy(gt_database_data[start_offset:end_offset])
             else:
                 file_path = self.root_path / info['path']
-
                 obj_points = np.fromfile(str(file_path), dtype=np.float32).reshape(
                     [-1, self.sampler_cfg.NUM_POINT_FEATURES])
                 if obj_points.shape[0] != info['num_points_in_gt']:
                     obj_points = np.fromfile(str(file_path), dtype=np.float64).reshape(-1, self.sampler_cfg.NUM_POINT_FEATURES)
-
             assert obj_points.shape[0] == info['num_points_in_gt']
             obj_points[:, :3] += info['box3d_lidar'][:3].astype(np.float32)
 
@@ -415,7 +412,6 @@ class DataBaseSampler(object):
                 )
 
             obj_points_list.append(obj_points)
-
         obj_points = np.concatenate(obj_points_list, axis=0)
         sampled_gt_names = np.array([x['name'] for x in total_valid_sampled_dict])
 
@@ -430,22 +426,24 @@ class DataBaseSampler(object):
 
             time_mask = np.logical_and(obj_points[:, -1] < max_time + 1e-6, obj_points[:, -1] > min_time - 1e-6)
             obj_points = obj_points[time_mask]
-
         large_sampled_gt_boxes = box_utils.enlarge_box3d(
             sampled_gt_boxes[:, 0:7], extra_width=self.sampler_cfg.REMOVE_EXTRA_WIDTH
         )
+        ##TODO：对齐变换
         points = box_utils.remove_points_in_boxes3d(points, large_sampled_gt_boxes)
+        painted_points=box_utils.remove_points_in_boxes3d(painted_points,large_sampled_gt_boxes)
         points = np.concatenate([obj_points[:, :points.shape[-1]], points], axis=0)
         gt_names = np.concatenate([gt_names, sampled_gt_names], axis=0)
         gt_boxes = np.concatenate([gt_boxes, sampled_gt_boxes], axis=0)
         data_dict['gt_boxes'] = gt_boxes
         data_dict['gt_names'] = gt_names
         data_dict['points'] = points
-
+        data_dict['painted_points']=painted_points
         if self.img_aug_type is not None:
             data_dict = self.copy_paste_to_image(img_aug_gt_dict, data_dict, points)
 
         return data_dict
+
     def __call__(self, data_dict):
         """
         Args:
@@ -461,7 +459,6 @@ class DataBaseSampler(object):
         total_valid_sampled_dict = []
         sampled_mv_height = []
         sampled_gt_boxes2d = []
-
         for class_name, sample_group in self.sample_groups.items():
             if sample_group['indices'].shape[0] == 0:
                 pass
@@ -471,7 +468,6 @@ class DataBaseSampler(object):
                     sample_group['sample_num'] = str(int(self.sample_class_num[class_name]) - num_gt)
                 if int(sample_group['sample_num']) > 0:
                     sampled_dict = self.sample_with_fixed_number(class_name, sample_group)
-
                     sampled_boxes = np.stack([x['box3d_lidar'] for x in sampled_dict], axis=0).astype(np.float32)
 
                     assert not self.sampler_cfg.get('DATABASE_WITH_FAKELIDAR', False), 'Please use latest codes to generate GT_DATABASE'
@@ -481,7 +477,6 @@ class DataBaseSampler(object):
                     iou2[range(sampled_boxes.shape[0]), range(sampled_boxes.shape[0])] = 0
                     iou1 = iou1 if iou1.shape[1] > 0 else iou2
                     valid_mask = ((iou1.max(axis=1) + iou2.max(axis=1)) == 0)
-
                     if self.img_aug_type is not None:
                         sampled_boxes2d, mv_height, valid_mask = self.sample_gt_boxes_2d(data_dict, sampled_boxes, valid_mask)
                         sampled_gt_boxes2d.append(sampled_boxes2d)
@@ -491,20 +486,18 @@ class DataBaseSampler(object):
                     valid_mask = valid_mask.nonzero()[0]
                     valid_sampled_dict = [sampled_dict[x] for x in valid_mask]
                     valid_sampled_boxes = sampled_boxes[valid_mask]
-
                     existed_boxes = np.concatenate((existed_boxes, valid_sampled_boxes[:, :existed_boxes.shape[-1]]), axis=0)
                     total_valid_sampled_dict.extend(valid_sampled_dict)
 
         sampled_gt_boxes = existed_boxes[gt_boxes.shape[0]:, :]
-
         if total_valid_sampled_dict.__len__() > 0:
             sampled_gt_boxes2d = np.concatenate(sampled_gt_boxes2d, axis=0) if len(sampled_gt_boxes2d) > 0 else None
             sampled_mv_height = np.concatenate(sampled_mv_height, axis=0) if len(sampled_mv_height) > 0 else None
-
+            #TODO:下方add打头的函数没有同步points和painted_points
             data_dict = self.add_sampled_boxes_to_scene(
                 data_dict, sampled_gt_boxes, total_valid_sampled_dict, sampled_mv_height, sampled_gt_boxes2d
             )
-
+            
         data_dict.pop('gt_boxes_mask')
         return data_dict
     
