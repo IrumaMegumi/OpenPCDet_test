@@ -372,7 +372,9 @@ class DataBaseSampler(object):
         gt_boxes = data_dict['gt_boxes'][gt_boxes_mask]
         gt_names = data_dict['gt_names'][gt_boxes_mask]
         points = data_dict['points']
-        painted_points=data_dict['painted_points']
+        painted_points=None
+        if 'painted_points' in data_dict.keys():
+            painted_points=data_dict['painted_points']
         if self.sampler_cfg.get('USE_ROAD_PLANE', False) and mv_height is None:
             sampled_gt_boxes, mv_height = self.put_boxes_on_road_planes(
                 sampled_gt_boxes, data_dict['road_plane'], data_dict['calib']
@@ -431,7 +433,8 @@ class DataBaseSampler(object):
         )
         ##TODO：对齐变换
         points = box_utils.remove_points_in_boxes3d(points, large_sampled_gt_boxes)
-        painted_points=box_utils.remove_points_in_boxes3d(painted_points,large_sampled_gt_boxes)
+        if painted_points is not None:
+            painted_points=box_utils.remove_points_in_boxes3d(painted_points,large_sampled_gt_boxes)
         points = np.concatenate([obj_points[:, :points.shape[-1]], points], axis=0)
         gt_names = np.concatenate([gt_names, sampled_gt_names], axis=0)
         gt_boxes = np.concatenate([gt_boxes, sampled_gt_boxes], axis=0)

@@ -19,6 +19,10 @@ class Detector3DTemplate(nn.Module):
         self.dataset = dataset
         self.class_names = dataset.class_names
         self.register_buffer('global_step', torch.LongTensor(1).zero_())
+        if 'USE_PAINTED_POINTS' not in model_cfg.keys():
+            self.use_painted_points=False
+        else:
+            self.use_painted_points=True
 
         self.module_topology = [
             'vfe', 'backbone_3d', 'map_to_bev_module', 'pfe',
@@ -39,15 +43,16 @@ class Detector3DTemplate(nn.Module):
         model_info_dict = {
             'module_list': [],
             'num_rawpoint_features': self.dataset.point_feature_encoder.num_point_features,
-            'num_point_features': self.dataset.point_feature_encoder.num_point_features, 
-            #painted point features
-            'num_painted_point_features':self.dataset.painted_feature_encoder.num_point_features,           
+            'num_point_features': self.dataset.point_feature_encoder.num_point_features,            
             'grid_size': self.dataset.grid_size,
             'point_cloud_range': self.dataset.point_cloud_range,
             'voxel_size': self.dataset.voxel_size,
             'depth_downsample_factor': self.dataset.depth_downsample_factor
         }
-        
+        if self.use_painted_points==True:
+            model_info_dict['num_painted_point_features']=self.dataset.painted_feature_encoder.num_point_features
+        else:
+            model_info_dict['num_painted_point_features']=None
         for module_name in self.module_topology:
             module, model_info_dict = getattr(self, 'build_%s' % module_name)(
                 model_info_dict=model_info_dict
@@ -118,7 +123,7 @@ class Detector3DTemplate(nn.Module):
     def build_pfe(self, model_info_dict):
         if self.model_cfg.get('PFE', None) is None:
             return None, model_info_dict
-
+        
         pfe_module = pfe.__all__[self.model_cfg.PFE.NAME](
             model_cfg=self.model_cfg.PFE,
             voxel_size=model_info_dict['voxel_size'],

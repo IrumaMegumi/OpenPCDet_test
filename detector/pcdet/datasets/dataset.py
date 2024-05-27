@@ -259,7 +259,7 @@ class DatasetTemplate(torch_data.Dataset):
                         coor_pad = np.pad(coor, ((0, 0), (1, 0)), mode='constant', constant_values=i)
                         coors.append(coor_pad)
                     ret[key] = np.concatenate(coors, axis=0)
-                elif key in ['painted_points']:
+                elif key in ['painted_points'] and data_dict['painted_points'][0] is not None:
                     coors = []
                     if isinstance(val[0], list):
                         val =  [i for item in val for i in item]
