@@ -259,27 +259,33 @@ class DatasetTemplate(torch_data.Dataset):
                         coor_pad = np.pad(coor, ((0, 0), (1, 0)), mode='constant', constant_values=i)
                         coors.append(coor_pad)
                     ret[key] = np.concatenate(coors, axis=0)
+                elif key in ['painted_points']:
+                    coors = []
+                    if isinstance(val[0], list):
+                        val =  [i for item in val for i in item]
+                    for i, coor in enumerate(val):
+                        coor_pad = np.pad(coor, ((0, 0), (1, 0)), mode='constant', constant_values=i)
+                        coors.append(coor_pad)
+                    ret[key] = np.concatenate(coors, axis=0)
                 elif key in ['gt_boxes']:
                     max_gt = max([len(x) for x in val])
                     batch_gt_boxes3d = np.zeros((batch_size, max_gt, val[0].shape[-1]), dtype=np.float32)
                     for k in range(batch_size):
                         batch_gt_boxes3d[k, :val[k].__len__(), :] = val[k]
                     ret[key] = batch_gt_boxes3d
-
+                    print(f"{key} processing completed")
                 elif key in ['roi_boxes']:
                     max_gt = max([x.shape[1] for x in val])
                     batch_gt_boxes3d = np.zeros((batch_size, val[0].shape[0], max_gt, val[0].shape[-1]), dtype=np.float32)
                     for k in range(batch_size):
                         batch_gt_boxes3d[k,:, :val[k].shape[1], :] = val[k]
                     ret[key] = batch_gt_boxes3d
-
                 elif key in ['roi_scores', 'roi_labels']:
                     max_gt = max([x.shape[1] for x in val])
                     batch_gt_boxes3d = np.zeros((batch_size, val[0].shape[0], max_gt), dtype=np.float32)
                     for k in range(batch_size):
                         batch_gt_boxes3d[k,:, :val[k].shape[1]] = val[k]
                     ret[key] = batch_gt_boxes3d
-
                 elif key in ['gt_boxes2d']:
                     max_boxes = 0
                     max_boxes = max([len(x) for x in val])

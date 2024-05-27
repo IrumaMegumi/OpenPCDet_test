@@ -39,13 +39,15 @@ class Detector3DTemplate(nn.Module):
         model_info_dict = {
             'module_list': [],
             'num_rawpoint_features': self.dataset.point_feature_encoder.num_point_features,
-            'num_point_features': self.dataset.point_feature_encoder.num_point_features,
-            'num_painted_point_features':self.dataset.painted_feature_encoder.num_point_features,
+            'num_point_features': self.dataset.point_feature_encoder.num_point_features, 
+            #painted point features
+            'num_painted_point_features':self.dataset.painted_feature_encoder.num_point_features,           
             'grid_size': self.dataset.grid_size,
             'point_cloud_range': self.dataset.point_cloud_range,
             'voxel_size': self.dataset.voxel_size,
             'depth_downsample_factor': self.dataset.depth_downsample_factor
         }
+        
         for module_name in self.module_topology:
             module, model_info_dict = getattr(self, 'build_%s' % module_name)(
                 model_info_dict=model_info_dict
@@ -69,7 +71,8 @@ class Detector3DTemplate(nn.Module):
         model_info_dict['num_point_features'] = vfe_module.get_output_feature_dim()
         model_info_dict['module_list'].append(vfe_module)
         return vfe_module, model_info_dict
-
+    
+    #spconv，使用了voxelnet，不需要修改
     def build_backbone_3d(self, model_info_dict):
         if self.model_cfg.get('BACKBONE_3D', None) is None:
             return None, model_info_dict
@@ -111,6 +114,7 @@ class Detector3DTemplate(nn.Module):
         model_info_dict['num_bev_features'] = backbone_2d_module.num_bev_features
         return backbone_2d_module, model_info_dict
 
+    #需要修改这个部分，把所有的点变成painted points
     def build_pfe(self, model_info_dict):
         if self.model_cfg.get('PFE', None) is None:
             return None, model_info_dict
@@ -120,7 +124,8 @@ class Detector3DTemplate(nn.Module):
             voxel_size=model_info_dict['voxel_size'],
             point_cloud_range=model_info_dict['point_cloud_range'],
             num_bev_features=model_info_dict['num_bev_features'],
-            num_rawpoint_features=model_info_dict['num_rawpoint_features']
+            num_rawpoint_features=model_info_dict['num_rawpoint_features'],
+            num_painted_point_features=model_info_dict['num_painted_point_features']
         )
         model_info_dict['module_list'].append(pfe_module)
         model_info_dict['num_point_features'] = pfe_module.num_point_features

@@ -121,7 +121,7 @@ def sector_fps(points, num_sampled_points, num_sectors):
     return sampled_points
 
 
-class VoxelSetAbstraction(nn.Module):
+class VoxelSetAbstractionforPaintedPoints(nn.Module):
     def __init__(self, model_cfg, voxel_size, point_cloud_range, num_bev_features=None,
                  num_rawpoint_features=None,num_painted_point_features=None, **kwargs):
         super().__init__()
@@ -137,6 +137,8 @@ class VoxelSetAbstraction(nn.Module):
         c_in = 0
         for src_name in self.model_cfg.FEATURES_SOURCE:
             if src_name in ['bev', 'raw_points']:
+                continue
+            elif src_name in ['bev','painted_points']:
                 continue
             self.downsample_times_map[src_name] = SA_cfg[src_name].DOWNSAMPLE_FACTOR
 
@@ -162,7 +164,11 @@ class VoxelSetAbstraction(nn.Module):
             self.SA_rawpoints, cur_num_c_out = pointnet2_stack_modules.build_local_aggregation_module(
                 input_channels=num_rawpoint_features - 3, config=SA_cfg['raw_points']
             )
-
+        #painted_points特征点融合进去
+        elif 'painted_points' in self.model_cfg.FEATURES_SOURCE:
+            self.SA_rawpoints,cur_num_c_out = pointnet2_stack_modules.build_local_aggregation_module(
+                input_channels=num_painted_point_features - 3, config=SA_cfg['painted_points']
+            )
             c_in += cur_num_c_out
 
         self.vsa_point_feature_fusion = nn.Sequential(
@@ -177,7 +183,7 @@ class VoxelSetAbstraction(nn.Module):
     def interpolate_from_bev_features(self, keypoints, bev_features, batch_size, bev_stride):
         """
         Args:
-            keypoints: (N1 + N2 + ..., 4)
+            keypoints: (N1 + N2 + ..., 4),for painted keytpoints (N1+N2......,8)
             bev_features: (B, C, H, W)
             batch_size:
             bev_stride:
@@ -245,8 +251,13 @@ class VoxelSetAbstraction(nn.Module):
                 point_cloud_range=self.point_cloud_range
             )
             batch_indices = batch_dict['voxel_coords'][:, 0].long()
+        #取painted points
+        elif self.model_cfg.POINT_SOURCE=='painted_points':
+            src_points = batch_dict['painted_points'][:, 1:4]
+            batch_indices = batch_dict['painted_points'][:, 0].long()
         else:
             raise NotImplementedError
+        
         keypoints_list = []
         for bs_idx in range(batch_size):
             bs_mask = (batch_indices == bs_idx)
@@ -350,6 +361,7 @@ class VoxelSetAbstraction(nn.Module):
             point_coords: (N, 4)
 
         """
+        #for painted points, keypoints' size is [N,8]
         keypoints = self.get_sampled_points(batch_dict)
 
         point_features_list = []
@@ -378,6 +390,23 @@ class VoxelSetAbstraction(nn.Module):
                 new_xyz=new_xyz, new_xyz_batch_cnt=new_xyz_batch_cnt,
                 filter_neighbors_with_roi=self.model_cfg.SA_LAYER['raw_points'].get('FILTER_NEIGHBOR_WITH_ROI', False),
                 radius_of_neighbor=self.model_cfg.SA_LAYER['raw_points'].get('RADIUS_OF_NEIGHBOR_WITH_ROI', None),
+                rois=batch_dict.get('rois', None)
+            )
+            point_features_list.append(pooled_features)
+
+        #对painted points处理
+        elif 'painted_points' in self.model_cfg.FEATURES_SOURCE:
+            #这里用raw_points命名是防止后续修改过多
+            raw_points = batch_dict['painted_points']
+
+            pooled_features = self.aggregate_keypoint_features_from_one_source(
+                batch_size=batch_size, aggregate_func=self.SA_rawpoints,
+                xyz=raw_points[:, 1:4],
+                xyz_features=raw_points[:, 4:].contiguous() if raw_points.shape[1] > 4 else None, #pointpainting可以融进去
+                xyz_bs_idxs=raw_points[:, 0],
+                new_xyz=new_xyz, new_xyz_batch_cnt=new_xyz_batch_cnt,
+                filter_neighbors_with_roi=self.model_cfg.SA_LAYER['painted_points'].get('FILTER_NEIGHBOR_WITH_ROI', False),
+                radius_of_neighbor=self.model_cfg.SA_LAYER['painted_points'].get('RADIUS_OF_NEIGHBOR_WITH_ROI', None),
                 rois=batch_dict.get('rois', None)
             )
             point_features_list.append(pooled_features)

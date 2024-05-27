@@ -6,7 +6,7 @@ import torch.nn.functional as F
 
 from . import pointnet2_utils
 
-
+#for painted points, input channels=5
 def build_local_aggregation_module(input_channels, config):
     local_aggregation_name = config.get('NAME', 'StackSAModuleMSG')
 
