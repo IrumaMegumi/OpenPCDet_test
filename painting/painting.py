@@ -253,7 +253,7 @@ class Painter:
                 # paint the point clouds
                 # points: N * 8
                 points = self.augment_lidar_class_scores_both(points, calib_fromfile,scores_from_cam)
-                np.save(self.save_path + ("%06d_v1.npy" % idx), points)
+                np.save(self.save_path + ("%06d.npy" % idx), points)
 
 if __name__ == '__main__':
     painter = Painter(SEG_NET)

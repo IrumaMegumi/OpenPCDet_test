@@ -15,7 +15,7 @@ def train_one_epoch(model, optimizer, train_loader,test_loader, model_func, lr_s
     
     #记录每一个epoch的损失
     epoch_loss=0
-    tb_dict_epoch={'rpn_loss':0,'rpn_loss_cls':0,'rpn_loss_loc':0,'rpn_loss_dir':0}
+    tb_dict_epoch={'rpn_loss':0,'rcnn_loss':0,'point_loss_cls':0}
     if rank == 0:
         pbar = tqdm.tqdm(total=total_it_each_epoch, leave=leave_pbar, desc='train', dynamic_ncols=True)
 
