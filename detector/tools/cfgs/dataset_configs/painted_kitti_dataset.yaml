@@ -85,3 +85,12 @@ PAINTED_POINT_PROCESSOR:
         'train': True,
         'test': False
       }
+    
+    #如果双链路都要用painted points要加上
+    - NAME: transform_painted_points_to_painted_voxels
+      VOXEL_SIZE: [0.05, 0.05, 0.1]
+      MAX_POINTS_PER_VOXEL: 5
+      MAX_NUMBER_OF_VOXELS: {
+        'train': 16000,
+        'test': 40000
+      }

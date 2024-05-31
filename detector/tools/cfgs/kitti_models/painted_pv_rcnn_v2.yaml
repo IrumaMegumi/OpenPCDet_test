@@ -1,8 +1,6 @@
 # TODO: fill in the blanks
 CLASS_NAMES: ['Car', 'Pedestrian', 'Cyclist']
 
-
-
 DATA_CONFIG:
     _BASE_CONFIG_: cfgs/dataset_configs/painted_kitti_dataset.yaml
     DATA_AUGMENTOR:

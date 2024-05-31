@@ -65,12 +65,14 @@ class DataProcessor(object):
     def __init__(self, processor_configs, point_cloud_range, training, num_point_features,use_painted_points=False):
         self.point_cloud_range = point_cloud_range
         self.training = training
+        #for painted points, num_point_features is 8
         self.num_point_features = num_point_features
         self.mode = 'train' if training else 'test'
         self.grid_size = self.voxel_size = None
         self.data_processor_queue = []
 
         self.voxel_generator = None
+        self.painted_voxel_generator=None
         #是否针对painted points处理
         self.use_painted_points=use_painted_points
 
@@ -187,7 +189,57 @@ class DataProcessor(object):
             data_dict['voxel_coords'] = coordinates
             data_dict['voxel_num_points'] = num_points
         return data_dict
+    
+    def transform_painted_points_to_painted_voxels(self, data_dict=None, config=None):
+        if data_dict is None:
+            grid_size = (self.point_cloud_range[3:6] - self.point_cloud_range[0:3]) / np.array(config.VOXEL_SIZE)
+            self.grid_size = np.round(grid_size).astype(np.int64)
+            self.voxel_size = config.VOXEL_SIZE
+            # just bind the config, we will create the VoxelGeneratorWrapper later,
+            # to avoid pickling issues in multiprocess spawn
+            return partial(self.transform_painted_points_to_painted_voxels, config=config)
 
+        if self.painted_voxel_generator is None:
+            self.painted_voxel_generator = VoxelGeneratorWrapper(
+                vsize_xyz=config.VOXEL_SIZE,
+                coors_range_xyz=self.point_cloud_range,
+                num_point_features=self.num_point_features,
+                max_num_points_per_voxel=config.MAX_POINTS_PER_VOXEL,
+                max_num_voxels=config.MAX_NUMBER_OF_VOXELS[self.mode],
+            )
+
+        #修改数据源
+        points = data_dict['painted_points']
+        voxel_output = self.painted_voxel_generator.generate(points)
+        voxels, coordinates, num_points = voxel_output
+
+        if not data_dict['use_lead_xyz']:
+            voxels = voxels[..., 3:]  # remove xyz in voxels(N, 3)
+
+        if config.get('DOUBLE_FLIP', False):
+            voxels_list, voxel_coords_list, voxel_num_points_list = [voxels], [coordinates], [num_points]
+            points_yflip, points_xflip, points_xyflip = self.double_flip(points)
+            points_list = [points_yflip, points_xflip, points_xyflip]
+            keys = ['yflip', 'xflip', 'xyflip']
+            for i, key in enumerate(keys):
+                voxel_output = self.voxel_generator.generate(points_list[i])
+                voxels, coordinates, num_points = voxel_output
+
+                if not data_dict['use_lead_xyz']:
+                    voxels = voxels[..., 3:]
+                voxels_list.append(voxels)
+                voxel_coords_list.append(coordinates)
+                voxel_num_points_list.append(num_points)
+
+            data_dict['painted_voxels'] = voxels_list
+            data_dict['painted_voxel_coords'] = voxel_coords_list
+            data_dict['painted_voxel_num_points'] = voxel_num_points_list
+        else:
+            data_dict['painted_voxels'] = voxels
+            data_dict['painted_voxel_coords'] = coordinates
+            data_dict['painted_voxel_num_points'] = num_points
+        return data_dict
+    
     def sample_points(self, data_dict=None, config=None):
         if data_dict is None:
             return partial(self.sample_points, config=config)

@@ -221,7 +221,7 @@ class DatasetTemplate(torch_data.Dataset):
             data_dict=self.painted_feature_encoder.forward(data_dict)
 
         #双链路预处理，对painted_point不作体素转换
-        #TODO:预处理方式没对齐，严查！
+        #如果你要是两个链路都用painted points，记得在yaml里面加上转体素部分
         data_dict = self.data_processor.forward(
             data_dict=data_dict
         )
@@ -246,12 +246,12 @@ class DatasetTemplate(torch_data.Dataset):
 
         for key, val in data_dict.items():
             try:
-                if key in ['voxels', 'voxel_num_points']:
+                if key in ['voxels', 'voxel_num_points','painted_voxels','painted_voxel_num_points']:
                     if isinstance(val[0], list):
                         batch_size_ratio = len(val[0])
                         val = [i for item in val for i in item]
                     ret[key] = np.concatenate(val, axis=0)
-                elif key in ['points', 'voxel_coords']:
+                elif key in ['points', 'voxel_coords','painted_voxel_coords']:
                     coors = []
                     if isinstance(val[0], list):
                         val =  [i for item in val for i in item]
