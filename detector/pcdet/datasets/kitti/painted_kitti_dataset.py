@@ -7,6 +7,8 @@ from skimage import io
 from ...ops.roiaware_pool3d import roiaware_pool3d_utils
 from ...utils import box_utils, calibration_kitti, common_utils, object3d_kitti
 from ..dataset import DatasetTemplate
+import math
+from . import kitti_utils
 
 #采用Pointpainting处理融合后的点云数据
 class PaintedKittiDataset(DatasetTemplate):
@@ -27,9 +29,9 @@ class PaintedKittiDataset(DatasetTemplate):
 
         split_dir = self.root_path / 'ImageSets' / (self.split + '.txt')
         self.sample_id_list = [x.strip() for x in open(split_dir).readlines()] if split_dir.exists() else None
-
         self.kitti_infos = []
         self.include_kitti_data(self.mode)
+
 
     def include_kitti_data(self, mode):
         if self.logger is not None:
@@ -178,7 +180,7 @@ class PaintedKittiDataset(DatasetTemplate):
                 loc = annotations['location'][:num_objects]
                 dims = annotations['dimensions'][:num_objects]
                 rots = annotations['rotation_y'][:num_objects]
-                loc_lidar = calib.rect_to_lidar(loc)
+                loc_lidar = calib.rect_to_lidar(loc) #loc_lidar是雷达坐标系下点的坐标
                 l, h, w = dims[:, 0:1], dims[:, 1:2], dims[:, 2:3]
                 loc_lidar[:, 2] += h[:, 0] / 2
                 gt_boxes_lidar = np.concatenate([loc_lidar, l, w, h, -(np.pi / 2 + rots[..., np.newaxis])], axis=1)
@@ -226,8 +228,10 @@ class PaintedKittiDataset(DatasetTemplate):
             print('gt_database sample: %d/%d' % (k + 1, len(infos)))
             info = infos[k]
             sample_idx = info['point_cloud']['lidar_idx']
-            # points = self.get_lidar(sample_idx)
+            #TODO: 待定
+            #points = self.get_lidar(sample_idx)
             points = self.get_painted_lidar(sample_idx)
+            ## TODO: 待定选择哪个
             annos = info['annos']
             names = annos['name']
             difficulty = annos['difficulty']
@@ -243,12 +247,10 @@ class PaintedKittiDataset(DatasetTemplate):
                 filename = '%s_%s_%d.bin' % (sample_idx, names[i], i)
                 filepath = database_save_path / filename
                 gt_points = points[point_indices[i] > 0].astype(np.float32)
-                print(gt_points.dtype)
 
                 gt_points[:, :3] -= gt_boxes[i, :3]
                 with open(filepath, 'w') as f:
                     gt_points.tofile(f)
-                    print(gt_points.shape)
 
                 if (used_classes is None) or names[i] in used_classes:
                     db_path = str(filepath.relative_to(self.root_path))  # gt_database/xxxxx.bin
@@ -383,7 +385,6 @@ class PaintedKittiDataset(DatasetTemplate):
             gt_names = annos['name']
             gt_boxes_camera = np.concatenate([loc, dims, rots[..., np.newaxis]], axis=1).astype(np.float32)
             gt_boxes_lidar = box_utils.boxes3d_kitti_camera_to_lidar(gt_boxes_camera, calib)
-
             input_dict.update({
                 'gt_names': gt_names,
                 'gt_boxes': gt_boxes_lidar

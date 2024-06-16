@@ -28,7 +28,10 @@ def drop_info_with_name(info, name):
     ret_info = {}
     keep_indices = [i for i, x in enumerate(info['name']) if x != name]
     for key in info.keys():
+        # try:
         ret_info[key] = info[key][keep_indices]
+        # except:
+        #     print(f"wrong key:{key}")
     return ret_info
 
 

@@ -35,18 +35,18 @@ DATA_CONFIG:
 MODEL:
     NAME: PaintedPVRCNN
 
-    #是否会使用到painted points，如果会的话，放在pfe链路
+    #Pfe链路是否会使用到painted points
     USE_PAINTED_POINTS: True
 
-    #体素生成时的数据来源，只能是painted_points或raw_points
-    VOXEL_GENERATE_SRC: painted_points
+    #体素生成时的数据来源，只能是painted_points或raw_points，这里如果是raw_points，下面的USE_PAINTED_POINTS_IN_VFE必须为False
+    VOXEL_GENERATE_SRC: raw_points
 
     VFE:
         NAME: MeanVFE
 
     BACKBONE_3D:
         NAME: VoxelBackBone8x
-        USE_PAINTED_POINTS: True
+        USE_PAINTED_POINTS_IN_VFE: False
 
     MAP_TO_BEV:
         NAME: HeightCompression
@@ -121,10 +121,12 @@ MODEL:
 
     PFE:
         NAME: VoxelSetAbstractionforPaintedPoints
-        POINT_SOURCE: painted_points # TODO: correct it!
+        #只能是raw_points和painted_points
+        POINT_SOURCE: painted_points 
         NUM_KEYPOINTS: 2048
         NUM_OUTPUT_FEATURES: 128
-        SAMPLE_METHOD: FPS
+        #SAMPLE_METHOD: FPS
+        SAMPLE_METHOD: FPS #使用PPN时必须使用PaintedPoints
 
         FEATURES_SOURCE: ['bev', 'x_conv1', 'x_conv2', 'x_conv3', 'x_conv4', 'painted_points']
         SA_LAYER:

@@ -194,7 +194,7 @@ class DatasetTemplate(torch_data.Dataset):
             
             if 'calib' in data_dict:
                 calib = data_dict['calib']
-
+                
             data_dict = self.data_augmentor.forward(
                 data_dict={
                     **data_dict,
@@ -237,6 +237,16 @@ class DatasetTemplate(torch_data.Dataset):
     @staticmethod
     def collate_batch(batch_list, _unused=False):
         data_dict = defaultdict(list)
+        #对near的判断建议加在这里
+        for batch_msg in batch_list:
+            num_objects=batch_msg['gt_boxes'].shape[0]
+            is_near_list=[]
+            for object in range(num_objects):
+                if abs(batch_msg['gt_boxes'][object][0])<35.2 and abs(batch_msg['gt_boxes'][object][1])<20:
+                    is_near_list.append([1])
+                else:
+                    is_near_list.append([2])
+            batch_msg['near']=np.array(is_near_list)
         for cur_sample in batch_list:
             for key, val in cur_sample.items():
                 data_dict[key].append(val)
@@ -273,7 +283,12 @@ class DatasetTemplate(torch_data.Dataset):
                     for k in range(batch_size):
                         batch_gt_boxes3d[k, :val[k].__len__(), :] = val[k]
                     ret[key] = batch_gt_boxes3d
-                    print(f"{key} processing completed")
+                elif key in ['near']:
+                    max_near=max([len(x) for x in val])
+                    batch_is_near=np.zeros((batch_size,max_near,val[0].shape[-1]), dtype=int)
+                    for k in range(batch_size):
+                        batch_is_near[k, :val[k].__len__(),:]=val[k]
+                    ret[key] = batch_is_near
                 elif key in ['roi_boxes']:
                     max_gt = max([x.shape[1] for x in val])
                     batch_gt_boxes3d = np.zeros((batch_size, val[0].shape[0], max_gt, val[0].shape[-1]), dtype=np.float32)

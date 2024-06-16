@@ -22,7 +22,7 @@ def parse_config():
     parser = argparse.ArgumentParser(description='arg parser')
     parser.add_argument('--cfg_file', type=str, default=None, help='specify the config for training')
 
-    parser.add_argument('--batch_size', type=int, default=1, required=False, help='batch size for training') #建议自己指定
+    parser.add_argument('--batch_size', type=int, default=4, required=False, help='batch size for training') #建议自己指定
     parser.add_argument('--epochs', type=int, default=None, required=False, help='number of epochs to train for')
     parser.add_argument('--workers', type=int, default=0, help='number of workers for dataloader')
     parser.add_argument('--extra_tag', type=str, default='default', help='extra tag for this experiment')
@@ -116,8 +116,8 @@ def main():
     )
 
     #训练集模型输出探针检查
-    # for data_dict in tqdm(train_loader,desc="Loading training data",leave=False):
-    #     pass
+    for data_dict in tqdm(train_loader,desc="Loading training data",leave=False):
+        pass
 
     # create test dataloader
     test_set, test_loader, sampler = build_dataloader(
@@ -127,8 +127,8 @@ def main():
         dist=dist_train, workers=args.workers, logger=logger, training=False
     )
     #测试集模型输出探针检查
-    # for data_dict in tqdm(test_loader,desc="Loading training data",leave=False):
-    #     pass
+    for data_dict in tqdm(test_loader,desc="Loading training data",leave=False):
+        pass
     
     model = build_network(model_cfg=cfg.MODEL, num_class=len(cfg.CLASS_NAMES), dataset=train_set)
     if args.sync_bn:

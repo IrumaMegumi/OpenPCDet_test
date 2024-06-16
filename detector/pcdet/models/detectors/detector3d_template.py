@@ -22,7 +22,7 @@ class Detector3DTemplate(nn.Module):
         if 'USE_PAINTED_POINTS' not in model_cfg.keys():
             self.use_painted_points=False
         else:
-            self.use_painted_points=True
+            self.use_painted_points=model_cfg['USE_PAINTED_POINTS']
 
         self.module_topology = [
             'vfe', 'backbone_3d', 'map_to_bev_module', 'pfe',
@@ -64,7 +64,7 @@ class Detector3DTemplate(nn.Module):
     def build_vfe(self, model_info_dict):
         if self.model_cfg.get('VFE', None) is None:
             return None, model_info_dict
-        if self.model_cfg.VOXEL_GENERATE_SRC=='raw_points' and self.model_cfg.USE_PAINTED_POINTS==False:
+        if self.model_cfg.VOXEL_GENERATE_SRC=='raw_points' and self.model_cfg.BACKBONE_3D.USE_PAINTED_POINTS_IN_VFE==False:
             vfe_module = vfe.__all__[self.model_cfg.VFE.NAME](
                 model_cfg=self.model_cfg.VFE,
                 num_point_features=model_info_dict['num_rawpoint_features'],
@@ -73,7 +73,7 @@ class Detector3DTemplate(nn.Module):
                 grid_size=model_info_dict['grid_size'],
                 depth_downsample_factor=model_info_dict['depth_downsample_factor']
             )
-        elif self.model_cfg.VOXEL_GENERATE_SRC=='painted_points' and self.model_cfg.USE_PAINTED_POINTS==True:
+        elif self.model_cfg.VOXEL_GENERATE_SRC=='painted_points' and self.model_cfg.BACKBONE_3D.USE_PAINTED_POINTS_IN_VFE==True:
             vfe_module = vfe.__all__[self.model_cfg.VFE.NAME](
                 model_cfg=self.model_cfg.VFE,
                 num_point_features=model_info_dict['num_painted_point_features'],
@@ -83,7 +83,7 @@ class Detector3DTemplate(nn.Module):
                 depth_downsample_factor=model_info_dict['depth_downsample_factor']
             )
         else:
-            pass
+            raise ValueError("No point sources or your source doesn't match your parameter in USE_PAINTED_POINTS_IN_VFE, please check your yaml file")
         model_info_dict['num_point_features'] = vfe_module.get_output_feature_dim()
         model_info_dict['module_list'].append(vfe_module)
         return vfe_module, model_info_dict
@@ -92,7 +92,7 @@ class Detector3DTemplate(nn.Module):
     def build_backbone_3d(self, model_info_dict):
         if self.model_cfg.get('BACKBONE_3D', None) is None:
             return None, model_info_dict
-        if self.model_cfg.VOXEL_GENERATE_SRC=='raw_points' and self.model_cfg.USE_PAINTED_POINTS==False:
+        if self.model_cfg.VOXEL_GENERATE_SRC=='raw_points' and self.model_cfg.BACKBONE_3D.USE_PAINTED_POINTS_IN_VFE==False:
             backbone_3d_module = backbones_3d.__all__[self.model_cfg.BACKBONE_3D.NAME](
                 model_cfg=self.model_cfg.BACKBONE_3D,
                 input_channels=model_info_dict['num_point_features'],
@@ -100,7 +100,7 @@ class Detector3DTemplate(nn.Module):
                 voxel_size=model_info_dict['voxel_size'],
                 point_cloud_range=model_info_dict['point_cloud_range']
             )
-        elif self.model_cfg.VOXEL_GENERATE_SRC=='painted_points' and self.model_cfg.USE_PAINTED_POINTS==True:
+        elif self.model_cfg.VOXEL_GENERATE_SRC=='painted_points' and self.model_cfg.BACKBONE_3D.USE_PAINTED_POINTS_IN_VFE==True:
             backbone_3d_module = backbones_3d.__all__[self.model_cfg.BACKBONE_3D.NAME](
                 model_cfg=self.model_cfg.BACKBONE_3D,
                 input_channels=model_info_dict['num_painted_point_features'],
@@ -108,6 +108,8 @@ class Detector3DTemplate(nn.Module):
                 voxel_size=model_info_dict['voxel_size'],
                 point_cloud_range=model_info_dict['point_cloud_range']
             )
+        else:
+            pass
         model_info_dict['module_list'].append(backbone_3d_module)
         model_info_dict['num_point_features'] = backbone_3d_module.num_point_features
         model_info_dict['backbone_channels'] = backbone_3d_module.backbone_channels \

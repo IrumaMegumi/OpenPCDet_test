@@ -1,8 +1,6 @@
 from .detector3d_template import Detector3DTemplate
 
 #带有pointpainting双链路的PV-RCNN
-#TODO:双链路修改网络结构
-#TODO:彻底双链路
 class PaintedPVRCNN(Detector3DTemplate):
     def __init__(self, model_cfg, num_class, dataset):
         super().__init__(model_cfg=model_cfg, num_class=num_class, dataset=dataset)

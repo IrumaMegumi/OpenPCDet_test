@@ -431,7 +431,6 @@ class DataBaseSampler(object):
         large_sampled_gt_boxes = box_utils.enlarge_box3d(
             sampled_gt_boxes[:, 0:7], extra_width=self.sampler_cfg.REMOVE_EXTRA_WIDTH
         )
-        ##TODO：对齐变换
         points = box_utils.remove_points_in_boxes3d(points, large_sampled_gt_boxes)
         if painted_points is not None:
             painted_points=box_utils.remove_points_in_boxes3d(painted_points,large_sampled_gt_boxes)
@@ -496,11 +495,9 @@ class DataBaseSampler(object):
         if total_valid_sampled_dict.__len__() > 0:
             sampled_gt_boxes2d = np.concatenate(sampled_gt_boxes2d, axis=0) if len(sampled_gt_boxes2d) > 0 else None
             sampled_mv_height = np.concatenate(sampled_mv_height, axis=0) if len(sampled_mv_height) > 0 else None
-            #TODO:下方add打头的函数没有同步points和painted_points
             data_dict = self.add_sampled_boxes_to_scene(
                 data_dict, sampled_gt_boxes, total_valid_sampled_dict, sampled_mv_height, sampled_gt_boxes2d
             )
-            
         data_dict.pop('gt_boxes_mask')
         return data_dict
     

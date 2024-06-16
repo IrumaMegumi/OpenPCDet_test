@@ -139,7 +139,7 @@ class VoxelBackBone8x(nn.Module):
         """
         voxel_features=None
         voxel_coords=None
-        if self.model_cfg.USE_PAINTED_POINTS==False:
+        if self.model_cfg.USE_PAINTED_POINTS_IN_VFE==False:
             voxel_features, voxel_coords = batch_dict['voxel_features'], batch_dict['voxel_coords']
         else:
             voxel_features, voxel_coords = batch_dict['voxel_features'], batch_dict['painted_voxel_coords']

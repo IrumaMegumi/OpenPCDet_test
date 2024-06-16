@@ -37,7 +37,7 @@ MODEL:
     USE_PAINTED_POINTS: True
 
     #体素生成时的数据来源，只能是painted_points或raw_points
-    VOXEL_GENERATE_SRC: painted_points
+    VOXEL_GENERATE_SRC: raw_points
 
     VFE:
         NAME: MeanVFE

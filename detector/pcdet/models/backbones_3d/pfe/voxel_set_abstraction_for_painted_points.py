@@ -126,6 +126,13 @@ class VoxelSetAbstractionforPaintedPoints(nn.Module):
                  num_rawpoint_features=None,num_painted_point_features=None, **kwargs):
         super().__init__()
         self.model_cfg = model_cfg
+        if self.model_cfg.SAMPLE_METHOD=='PPN':
+            if self.model_cfg.POINT_SOURCE=='painted_points':
+                pass
+            else:
+                raise ValueError("if you want to use point proposal network, you must use painted points as your point source")
+        else:
+            pass
         self.voxel_size = voxel_size
         self.point_cloud_range = point_cloud_range
 
@@ -251,9 +258,13 @@ class VoxelSetAbstractionforPaintedPoints(nn.Module):
                 point_cloud_range=self.point_cloud_range
             )
             batch_indices = batch_dict['voxel_coords'][:, 0].long()
-        #取painted points
+        #根据你是否使用PPN取painted points
+        #TODO：写PPN部分
         elif self.model_cfg.POINT_SOURCE=='painted_points':
-            src_points = batch_dict['painted_points'][:, 1:4]
+            if self.model_cfg.SAMPLE_METHOD=='PPN':  # point proposal network
+                src_points=batch_dict['painted_points']
+            else:
+                src_points = batch_dict['painted_points'][:, 1:4]
             batch_indices = batch_dict['painted_points'][:, 0].long()
         else:
             raise NotImplementedError
@@ -280,6 +291,9 @@ class VoxelSetAbstractionforPaintedPoints(nn.Module):
                 )
                 bs_idxs = cur_keypoints.new_ones(cur_keypoints.shape[0]) * bs_idx
                 keypoints = torch.cat((bs_idxs[:, None], cur_keypoints), dim=1)
+            elif self.model_cfg.SAMPLE_METHOD == 'PPN':
+                # TODO: write Point Proposal Network here
+                pass
             else:
                 raise NotImplementedError
 
