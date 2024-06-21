@@ -195,6 +195,7 @@ class Painter:
         points_projected_on_mask_l = points_projected_on_mask_l.transpose()
         points_projected_on_mask_l = points_projected_on_mask_l/(points_projected_on_mask_l[:,2].reshape(-1,1))
 
+        #投影后的点是否落在图像内
         true_where_x_on_img_l = (0 < points_projected_on_mask_l[:, 0]) & (points_projected_on_mask_l[:, 0] < class_scores_l.shape[1]) #x in img coords is cols of img
         true_where_y_on_img_l = (0 < points_projected_on_mask_l[:, 1]) & (points_projected_on_mask_l[:, 1] < class_scores_l.shape[0])
         true_where_point_on_img_l = true_where_x_on_img_l & true_where_y_on_img_l

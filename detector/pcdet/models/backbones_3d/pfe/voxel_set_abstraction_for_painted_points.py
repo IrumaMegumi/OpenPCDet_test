@@ -6,7 +6,7 @@ import torch.nn as nn
 from ....ops.pointnet2.pointnet2_stack import pointnet2_modules as pointnet2_stack_modules
 from ....ops.pointnet2.pointnet2_stack import pointnet2_utils as pointnet2_stack_utils
 from ....utils import common_utils
-
+from .PointProposal import PointProposalNet
 
 def bilinear_interpolate_torch(im, x, y):
     """
@@ -171,7 +171,7 @@ class VoxelSetAbstractionforPaintedPoints(nn.Module):
             self.SA_rawpoints, cur_num_c_out = pointnet2_stack_modules.build_local_aggregation_module(
                 input_channels=num_rawpoint_features - 3, config=SA_cfg['raw_points']
             )
-        #painted_points特征点融合进去
+        #painted_points特征点融合进去，注意：这里只是融合的特征，后面可能要改动为PPN
         elif 'painted_points' in self.model_cfg.FEATURES_SOURCE:
             self.SA_rawpoints,cur_num_c_out = pointnet2_stack_modules.build_local_aggregation_module(
                 input_channels=num_painted_point_features - 3, config=SA_cfg['painted_points']
@@ -293,7 +293,12 @@ class VoxelSetAbstractionforPaintedPoints(nn.Module):
                 keypoints = torch.cat((bs_idxs[:, None], cur_keypoints), dim=1)
             elif self.model_cfg.SAMPLE_METHOD == 'PPN':
                 # TODO: write Point Proposal Network here
-                pass
+                # your input should be the variable: sampled points 或batch_dict
+                # TODO: 做好多阶段训练准备，在这里直接使用预训练的模型
+                PPN_model=PointProposalNet(num_object_points=self.model_cfg.NUM_OBJECT_POINTS,num_keypoints=self.model_cfg.NUM_KEYPOINTS,global_feat=False)
+                device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                PPN_model=PPN_model.to(device)
+                keypoints=PPN_model(sampled_points)
             else:
                 raise NotImplementedError
 
@@ -375,7 +380,7 @@ class VoxelSetAbstractionforPaintedPoints(nn.Module):
             point_coords: (N, 4)
 
         """
-        #for painted points, keypoints' size is [N,8]
+        #keypoints:[batch,x,y,z]
         keypoints = self.get_sampled_points(batch_dict)
 
         point_features_list = []
