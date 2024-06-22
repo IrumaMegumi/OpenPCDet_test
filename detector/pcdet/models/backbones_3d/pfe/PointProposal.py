@@ -1,4 +1,5 @@
 # Point Proposal Network, source points are painted
+# 建议分阶段独立训练
 import torch
 import torch.nn as nn 
 import torch.nn.functional as F
@@ -114,9 +115,10 @@ class PointProposalNet(nn.Module):
         self.evaluate_layer_3=nn.Linear(256,1)
         self.dropout = nn.Dropout(p=0.3)
         self.activate_func_eval=nn.ReLU()
-    def forward(self,painted_points):
+    def forward(self,batch_dict,is_training=False):
         #input shape:[batch(should be 1), num_points, num_point_features+1]
         #TODO: 对painted points的squeeze放在外面，我不太建议放在里面
+        painted_points=batch_dict['painted_points']
         painted_points=painted_points[:,:,1:]
         painted_points=painted_points.squeeze(0)
         _, indices = torch.sort(painted_points[:, 4])
@@ -142,8 +144,27 @@ class PointProposalNet(nn.Module):
         sorted_points = object_points[indices]
         keypoints= sorted_points[:self.num_keypoints, :]
         keypoints= keypoints.unsqueeze(0)
+        if is_training==True:
+            train_loss, tb_dict, disp_dict=self.calculate_loss(keypoints,batch_dict)
+            return train_loss, tb_dict
         #返回采样点和采样时提取的原始点特征，后续不确定是否备用
         return keypoints,result_features
+    #先写好训练的代码，然后再写loss
+    def calculate_loss(self, keypoints,batch_dict):
+        disp_dict={}
+        sample_loss, tb_dict=self.calculate_sample_loss(keypoints, batch_dict)
+        task_loss, tb_dict =self.calculate_task_loss(keypoints, batch_dict, tb_dict)
+        loss= 0.3*sample_loss+0.7*task_loss
+        return loss, tb_dict, disp_dict
+
+    #点到各个框中心最小的smooth_l1 loss总和除以采样点总数
+    def calculate_sample_loss(self, keypoints, batch_dict):
+        pass
+    
+    #近远处点的比例和标准比例差的绝对值
+    def calculate_task_loss(self, keypoints, batch_dict, tb_dict):
+        pass
+
 
 if __name__=='__main__':
     device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -154,7 +175,7 @@ if __name__=='__main__':
         sim_data = torch.rand(1,30000,9)
         sim_data=sim_data.to(device)
         start=time.time()
-        keypoints,keypointfeat= pointfeat(sim_data)
+        keypoints,keypointfeat= pointfeat(sim_data, is_training=True)
         end=time.time()
         run_time=(end-start)*1000
         print('point feat', keypoints.size())
