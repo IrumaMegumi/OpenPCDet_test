@@ -17,13 +17,12 @@ from pcdet.models.backbones_3d.pfe.PointProposal import PointProposalNet
 from pcdet.utils import common_utils
 from tools.train_utils.train_ppn_utils import ppn_train_model
 from tqdm import tqdm
-from torchviz import make_dot
 
 #要测一下训练时间
 def parse_config():
     parser = argparse.ArgumentParser(description='arg parser')
     parser.add_argument('--batch_size', type=int, default=2, required=False, help='batch size for training')
-    parser.add_argument('--epochs',type=int,default=3,required=False, help='number of epochs to train for')
+    parser.add_argument('--epochs',type=int,default=30,required=False, help='number of epochs to train for')
     parser.add_argument('--workers',type=int, default=0, help='number of workers for dataloader')
     parser.add_argument('--num_object_points',type=int,default=6000,help='number of points you selected from original points, 6000 is the number for kitti dataset')
     parser.add_argument('--num_keypoints',type=int,default=2048, help='number of keypoints you want to get')
@@ -62,7 +61,7 @@ def main():
 
     args.epochs = cfg.OPTIMIZATION.NUM_EPOCHS if args.epochs is None else args.epochs
 
-    output_dir = cfg.ROOT_DIR / 'output' / cfg.EXP_GROUP_PATH / 'point proposal network' / args.extra_tag
+    output_dir = cfg.ROOT_DIR / 'output' / cfg.EXP_GROUP_PATH / 'point_proposal_network' / args.extra_tag
     ckpt_dir = output_dir / 'ckpt'
     output_dir.mkdir(parents=True, exist_ok=True)
     ckpt_dir.mkdir(parents=True, exist_ok=True)

@@ -91,7 +91,7 @@ class PointNetfeat(nn.Module):
 class PointProposalNet(nn.Module):
     '''
         num_object_points: 你从原始点云中初筛的点数量
-        num_keypoints: 采样关键点数量
+        num_keypoints: 采样关键>点数量
     '''
     def __init__(self,num_object_points,num_keypoints,global_feat=False):
         super(PointProposalNet,self).__init__()
@@ -241,8 +241,6 @@ class PointProposalNet(nn.Module):
             return torch.exp(-((tensor - value).abs() / epsilon))
         keypoint_near = threshold_function(keypoints[:, -1], 1).sum()
         keypoint_far = threshold_function(keypoints[:, -1], 2).sum()
-        print(keypoint_near)
-        print(keypoint_far)
         if keypoint_near!=0 and keypoint_far!=0:
             ratio_keypoint_near_far=keypoint_near/keypoint_far
         elif keypoint_near!=0 and keypoint_far==0:
