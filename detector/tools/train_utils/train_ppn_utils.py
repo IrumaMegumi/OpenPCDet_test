@@ -4,6 +4,7 @@ import os
 import torch
 import tqdm
 from torch.nn.utils import clip_grad_norm_
+from torchviz import make_dot
 
 def ppn_train_one_epoch(model, optimizer, lr_scheduler, train_loader, test_loader, accumulated_iter,
                     rank, tbar, total_it_each_epoch, total_it_each_epoch_val, cur_epoch, dataloader_iter, tb_log=None, leave_pbar=False):
@@ -41,8 +42,10 @@ def ppn_train_one_epoch(model, optimizer, lr_scheduler, train_loader, test_loade
         # disp dict可能要代替
         train_loss, tb_dict, disp_dict = model(batch,is_training=True)
         #forward函数调用结束
-
         train_loss.backward()
+        for name, param in model.named_parameters():
+            if param.grad is not None:
+                print(f"Layer: {name}, Gradient: {param.grad}")
         optimizer.step()
         accumulated_iter += 1
         disp_dict.update({'train_loss': train_loss.item(), 'lr': cur_lr})
