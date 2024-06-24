@@ -141,6 +141,7 @@ class PointProposalNet(nn.Module):
             object_points= object_points.unsqueeze(0)
             object_points= object_points.permute(0,2,1)
             object_points= object_points.to(self.device)
+            object_points= object_points.to(torch.float32)
             object_point_features=self.feature_extraction_module(object_points)
             object_point_features=object_point_features.permute(0,2,1)
             #x to context fusion:[batch,num_points,num_point_features]
