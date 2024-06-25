@@ -6,6 +6,7 @@ import torch.nn.functional as F
 import numpy as np 
 from torch.autograd import Variable
 import time
+import pdb
 
 class STNkd(nn.Module):
     def __init__(self, k=64):
@@ -85,7 +86,69 @@ class PointNetfeat(nn.Module):
         else:
             x = x.view(-1, 1024, 1).repeat(1, 1, n_pts)
             return torch.cat([x, pointfeat], 1)
-      
+        
+class TopKBinaryMaskFunction(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, input_tensor, k):
+        # 保存输入和k以备反向传播使用
+        ctx.save_for_backward(input_tensor)
+        ctx.k = k
+        
+        # 对输入张量进行排序
+        sorted_tensor, indices = torch.sort(input_tensor[:, 0], descending=True)
+        
+        # 创建编码张量
+        encoded_tensor = torch.zeros_like(input_tensor)
+        encoded_tensor[indices[:k]] = 1
+        return encoded_tensor
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        input_tensor, = ctx.saved_tensors
+        k = ctx.k
+        
+        # 创建一个全零的梯度张量
+        grad_input = torch.zeros_like(input_tensor)
+        
+        # 对输入张量进行排序
+        _, indices = torch.sort(input_tensor, descending=True)
+        
+        # 将梯度传递给前k个元素
+        grad_input[indices[:k]] = grad_output[indices[:k]]
+        grad_input[indices[k:]]=grad_output[indices[k:]]
+        return grad_input, None
+    
+class TopKBinaryMaskFunction_v2(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, input_tensor, k):
+        # 保存输入和k以备反向传播使用
+        ctx.save_for_backward(input_tensor)
+        ctx.k = k
+        
+        # 对输入张量进行排序
+        sorted_tensor, indices = torch.sort(input_tensor[:, 0], descending=True)
+        
+        # 创建编码张量
+        encoded_tensor = torch.zeros_like(input_tensor)
+        encoded_tensor[indices[:k]] = 1
+        return encoded_tensor
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        input_tensor, = ctx.saved_tensors
+        k = ctx.k
+
+        # 创建一个全零的梯度张量
+        grad_input = torch.zeros_like(input_tensor)
+        
+        # 对输入张量进行排序
+        sorted_tensor, indices = torch.sort(input_tensor[:, 0], descending=True)
+        # 计算前k个元素的梯度
+        grad_input[indices[:k]] = grad_output[indices[:k]]
+        # 计算后k个元素的梯度, 使用sigmoid作为连续化方法
+        grad_input[indices[k:]] = torch.sigmoid(input_tensor[indices[k:]])
+        print(grad_input)
+        return grad_input, None
 #关键点建议网络，注意Loss的处理
 #可能需要做好多阶段训练的准备
 class PointProposalNet(nn.Module):
@@ -154,17 +217,26 @@ class PointProposalNet(nn.Module):
             scores_2=self.activate_func_eval(self.instanceNorm_2(self.dropout(self.evaluate_layer_2(scores_1))))
             scores_final=self.evaluate_layer_3(scores_2)
             scores_final=scores_final.squeeze(0)
+            #scores: 排序后的得分
+            #indices:排序后得分从大到小的索引
             scores, indices = torch.sort(scores_final[:, 0], descending=True)
             keypoints_scores=scores[:self.num_keypoints].unsqueeze(1)
             # post processing, 注意：scores带梯度，建议和keypoints做一个级联处理
             object_points=object_points.permute(0,2,1).squeeze(0)
+            #排序后的6000个点
             sorted_points = object_points[indices]
+            #取前2048个点作为关键点
             keypoints= sorted_points[:self.num_keypoints, :3]           
             if is_training==True:
-                keypoints=torch.cat((keypoints,keypoints_scores),dim=1)
-                train_loss_cur_batch, tb_dict_cur_batch, disp_dict=self.calculate_loss(keypoints,batch_dict, cur_batch)
+                scores_final=TopKBinaryMaskFunction_v2.apply(scores_final,self.num_keypoints)
+                #scores_final=torch.topk(scores_final.squeeze(1),self.num_keypoints)
+                # scores_final[indices[:self.num_keypoints]]=1
+                # scores_final[indices[self.num_keypoints:]]=0
+                #采用原object_points和编码后的scores_final级联，使采样操作连续
+                encoded_keypoints=torch.cat((object_points[:,:3],scores_final),dim=1)
+                train_loss_cur_batch, tb_dict_cur_batch, disp_dict=self.calculate_loss(encoded_keypoints,object_points[:,:3], scores_final, batch_dict, cur_batch)
                 for key,val in tb_dict_cur_batch.items():
-                    tb_dict_batch[key]+=val
+                    tb_dict_batch[key]+=val 
                 train_loss_batch+=train_loss_cur_batch
             else:
                 batch_indices_tensor=torch.full((self.num_keypoints,1),cur_batch).to(self.device) 
@@ -181,42 +253,49 @@ class PointProposalNet(nn.Module):
         return keypoints
     
     #先写好训练的代码，然后再写loss
-    def calculate_loss(self, keypoints,batch_dict,cur_batch):
+    def calculate_loss(self, encoded_keypoints,object_points, scores_final,batch_dict,cur_batch):
         disp_dict={}
-        sample_loss, tb_dict=self.calculate_sample_loss(keypoints, batch_dict,cur_batch)
-        task_loss, tb_dict =self.calculate_task_loss(keypoints, batch_dict, tb_dict, cur_batch)
-        loss= 0.3*sample_loss+0.7*task_loss
+        sample_loss, tb_dict=self.calculate_sample_loss(encoded_keypoints, batch_dict,cur_batch)
+        task_loss, tb_dict =self.calculate_task_loss(object_points, scores_final,batch_dict, tb_dict, cur_batch)
+        loss= 0.7*task_loss#0.3*sample_loss+
         tb_dict.update({'train_loss':loss})
         return loss, tb_dict, disp_dict
 
     #点到各个框中心最小的smooth_l1 loss总和除以采样点总数，计算的是当前batch中的一张图
-    def calculate_sample_loss(self, keypoints, batch_dict, cur_batch):
+    def calculate_sample_loss(self, encoded_keypoints, batch_dict, cur_batch):
         '''
         input: keypoints: 当前batch的一张图采样的关键点
         batch_dict: 当前batch的所有数据
         cur_batch: 你想处理当前batch的第几组数据
+        我有点懒，下面所有的Keypoints可以理解为encoded keypoints
         '''
         gt_boxes_center_cur_batch=torch.from_numpy(batch_dict['gt_boxes'][cur_batch,:,:3]).to(self.device) #当前batch中gt_boxes的中心坐标
         mask = gt_boxes_center_cur_batch.sum(dim=1) != 0
         filtered_gt_boxes = gt_boxes_center_cur_batch[mask] #过滤掉全部为0的box
-        keypoints_coord=keypoints[:,3]
+        keypoints_coord=encoded_keypoints[:,:3]
+        keypoints_is_sampled=encoded_keypoints[:,-1].unsqueeze(1)
         num_gt_boxes=filtered_gt_boxes.shape[0]
-        num_keypoints=keypoints.shape[0]
-        loss_matrix=torch.zeros(num_keypoints,num_gt_boxes)
-        for i in range(num_keypoints):
-            for j in range(num_gt_boxes):
-                loss = self.core_sample_loss(keypoints_coord[i], gt_boxes_center_cur_batch[j])
-                loss_matrix[i, j] = loss.sum()
+        num_keypoints=encoded_keypoints.shape[0]
+        # 计算所有关键点与所有gt box中心之间的L1距离
+        expanded_keypoints = keypoints_coord.unsqueeze(1).expand(-1, filtered_gt_boxes.size(0), -1)
+        expanded_gt_boxes = filtered_gt_boxes.unsqueeze(0).expand(keypoints_coord.size(0), -1, -1)
+        loss_matrix = F.smooth_l1_loss(expanded_keypoints, expanded_gt_boxes,reduction='none').sum(dim=2)
+        loss_matrix=loss_matrix*keypoints_is_sampled
         min_losses, _ = loss_matrix.min(dim=1)
-        avg_min_loss = min_losses.mean()
+        avg_min_loss = min_losses.sum()/self.num_keypoints
         tb_dict={'sample_loss': avg_min_loss}
         return avg_min_loss, tb_dict
     
     #近远处点的比例和标准比例差的绝对值
-    def calculate_task_loss(self, keypoints, batch_dict, tb_dict, cur_batch):
-        is_near_cur_batch=torch.from_numpy(batch_dict['near'][cur_batch,:,:]).to(self.device)
+    def calculate_task_loss(self, object_points, scores_final, batch_dict,tb_dict, cur_batch):
+        '''
+        sorted_object_points:[6000个点特征，score]
+        '''
+        is_near_cur_batch=torch.from_numpy(batch_dict['near'][cur_batch,:,:]).to(self.device).to(torch.float32)
         mask =is_near_cur_batch.sum(dim=1) != 0
         filtered_is_near = is_near_cur_batch[mask] #过滤掉全部为0的box
+        def threshold_function(tensor, value, epsilon=1e-3):
+            return torch.exp(-((tensor - value).abs() / epsilon))
         count_1 = torch.sum(filtered_is_near == 1).item()
         count_2 = torch.sum(filtered_is_near == 2).item()
         #损失函数计算的比例：近处点数量/远处点数量 应当接近ground truth中近远处框的比例
@@ -228,28 +307,18 @@ class PointProposalNet(nn.Module):
             ratio_gtbox_near_far=1/count_2
         else:
             ratio_gtbox_near_far=1
-        num_keypoints=keypoints.shape[0]
-        near_far_tensor=torch.zeros(num_keypoints, dtype=torch.float32, device=self.device)
-        for i in range(num_keypoints):
-            keypoint = keypoints[i, :]
-            if torch.abs(keypoint[0]) < 35.2 and torch.abs(keypoint[1]) < 20:
-                near_far_tensor[i] = 1
-            else:
-                near_far_tensor[i] = 2
-        near_far_tensor=near_far_tensor.unsqueeze(1)
-        keypoints=torch.cat((keypoints,near_far_tensor),dim=1)
-        def threshold_function(tensor, value, epsilon=1e-6):
-            return torch.exp(-((tensor - value).abs() / epsilon))
-        keypoint_near = threshold_function(keypoints[:, -1], 1).sum()
-        keypoint_far = threshold_function(keypoints[:, -1], 2).sum()
-        if keypoint_near!=0 and keypoint_far!=0:
-            ratio_keypoint_near_far=keypoint_near/keypoint_far
-        elif keypoint_near!=0 and keypoint_far==0:
-            ratio_keypoint_near_far=keypoint_near
-        elif keypoint_near==0 and keypoint_far!=0:
-            ratio_keypoint_near_far=0
-        else:
-            raise ValueError("your sample process is wrong, please check it!")
+        # ratio_gtbox_near_far=count_1/(count_2+0.01)
+        near_far_tensor=torch.where(
+            (torch.abs(object_points[:, 0]) < 35.2) & (torch.abs(object_points[:, 1]) < 20),
+            torch.tensor(1.0,device=self.device,dtype=torch.float32,requires_grad=True),
+            torch.tensor(2.0,device=self.device,dtype=torch.float32,requires_grad=True)
+        ).unsqueeze(1)
+        near_far_tensor=scores_final*near_far_tensor
+        #损失函数计算的比例：近处点数量/远处点数量 应当接近ground truth中近远处框的比例
+        keypoint_near = threshold_function(near_far_tensor, 1).sum()
+        keypoint_far = threshold_function(near_far_tensor, 2).sum()
+        ratio_keypoint_near_far=keypoint_near/(keypoint_far+1)
+
         task_loss=torch.abs(torch.log10(torch.abs(ratio_gtbox_near_far-ratio_keypoint_near_far)))
         tb_dict.update({'task_loss': task_loss})
         return task_loss, tb_dict   

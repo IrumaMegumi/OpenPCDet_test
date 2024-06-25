@@ -21,8 +21,8 @@ from tqdm import tqdm
 #要测一下训练时间
 def parse_config():
     parser = argparse.ArgumentParser(description='arg parser')
-    parser.add_argument('--batch_size', type=int, default=2, required=False, help='batch size for training')
-    parser.add_argument('--epochs',type=int,default=5,required=False, help='number of epochs to train for')
+    parser.add_argument('--batch_size', type=int, default=4, required=False, help='batch size for training')
+    parser.add_argument('--epochs',type=int,default=150,required=False, help='number of epochs to train for')
     parser.add_argument('--workers',type=int, default=0, help='number of workers for dataloader')
     parser.add_argument('--num_object_points',type=int,default=6000,help='number of points you selected from original points, 6000 is the number for kitti dataset')
     parser.add_argument('--num_keypoints',type=int,default=2048, help='number of keypoints you want to get')
@@ -116,7 +116,7 @@ def main():
     model.cuda()
 
     optimizer = optim.Adam(model.parameters(),lr=0.001, betas=(0.9, 0.999))
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=20*len(train_loader), gamma=0.5)
+    #scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=20*len(train_loader), gamma=0.5)
 
     model.train()  # before wrap to DistributedDataParallel to support fixed some parameters
     if dist_train:
@@ -136,7 +136,6 @@ def main():
     ppn_train_model(
         model=model,
         optimizer=optimizer,
-        lr_scheduler=scheduler,
         train_loader=train_loader,
         test_loader=test_loader,
         start_iter=start_iter,
