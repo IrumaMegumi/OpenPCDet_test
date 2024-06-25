@@ -45,11 +45,11 @@ def ppn_train_one_epoch(model, optimizer, train_loader, test_loader, train_accum
         train_loss.backward()
         clip_grad_norm_(model.parameters(), 10)
         #打印每个参数的梯度
-        # for name, param in model.named_parameters():
-        #     if param.grad is not None:
-        #         print(name, param.grad)
-        #     else:
-        #         print("no grid")
+        for name, param in model.named_parameters():
+            if param.grad is not None:
+                print(name, param.grad)
+            else:
+                print("no grid")
         optimizer.step()
         train_accumulated_iter += 1
         disp_dict.update({'train_loss': train_loss.item(), 'lr': cur_lr})

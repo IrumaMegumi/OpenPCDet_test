@@ -229,7 +229,6 @@ class PointProposalNet(nn.Module):
             keypoints= sorted_points[:self.num_keypoints, :3]           
             if is_training==True:
                 scores_final=TopKBinaryMaskFunction_v2.apply(scores_final,self.num_keypoints)
-                #scores_final=torch.topk(scores_final.squeeze(1),self.num_keypoints)
                 # scores_final[indices[:self.num_keypoints]]=1
                 # scores_final[indices[self.num_keypoints:]]=0
                 #采用原object_points和编码后的scores_final级联，使采样操作连续
@@ -257,7 +256,7 @@ class PointProposalNet(nn.Module):
         disp_dict={}
         sample_loss, tb_dict=self.calculate_sample_loss(encoded_keypoints, batch_dict,cur_batch)
         task_loss, tb_dict =self.calculate_task_loss(object_points, scores_final,batch_dict, tb_dict, cur_batch)
-        loss= 0.7*task_loss#0.3*sample_loss+
+        loss= 0.7*task_loss+0.3*sample_loss
         tb_dict.update({'train_loss':loss})
         return loss, tb_dict, disp_dict
 
