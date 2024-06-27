@@ -13,7 +13,7 @@ from tensorboardX import SummaryWriter
 
 from pcdet.config import cfg, cfg_from_yaml_file, log_config_to_file
 from pcdet.datasets import build_dataloader
-from pcdet.models.backbones_3d.pfe.PointProposal import PointProposalNet
+from pcdet.models.backbones_3d.pfe.PointProposal import PointProposalNet_v2
 from pcdet.utils import common_utils
 from tools.train_utils.train_ppn_utils import ppn_train_model
 from tqdm import tqdm
@@ -112,7 +112,7 @@ def main():
     # for data_dict in tqdm(test_loader,desc="Loading training data",leave=False):
     #     pass
     
-    model = PointProposalNet(num_object_points=args.num_object_points, num_keypoints=args.num_keypoints)
+    model = PointProposalNet_v2(num_object_points=args.num_object_points, num_keypoints=args.num_keypoints)
     model.cuda()
 
     optimizer = optim.Adam(model.parameters(),lr=0.001, betas=(0.9, 0.999))

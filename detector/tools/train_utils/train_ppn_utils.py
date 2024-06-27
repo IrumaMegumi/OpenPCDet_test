@@ -167,7 +167,7 @@ def ppn_train_model(model, optimizer,  train_loader, test_loader, start_iter, st
                 last_ckpt_path=str(ckpt_save_dir / 'last')
                 # save best.pth
                 if val_loss_of_cur_epoch<loss:
-                    loss=train_loss_of_cur_epoch
+                    loss=val_loss_of_cur_epoch
                     save_checkpoint(
                             checkpoint_state(model, optimizer, trained_epoch, val_accumulated_iter), filename=best_ckpt_path,
                         )

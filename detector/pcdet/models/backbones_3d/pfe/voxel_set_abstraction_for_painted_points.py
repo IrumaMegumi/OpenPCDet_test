@@ -128,7 +128,11 @@ class VoxelSetAbstractionforPaintedPoints(nn.Module):
         self.model_cfg = model_cfg
         if self.model_cfg.SAMPLE_METHOD=='PPN':
             if self.model_cfg.POINT_SOURCE=='painted_points':
-                pass
+                self.model_dict=torch.load("worst_ppn.pth",map_location=torch.device('cuda'))
+                self.PPN_model=PointProposalNet(num_object_points=self.model_cfg.NUM_OBJECT_POINTS,num_keypoints=self.model_cfg.NUM_KEYPOINTS,global_feat=False)
+                self.PPN_model.load_state_dict(self.model_dict['model_state'])
+                self.PPN_model.cuda()
+                self.PPN_model.eval()
             else:
                 raise ValueError("if you want to use point proposal network, you must use painted points as your point source")
         else:
@@ -295,10 +299,9 @@ class VoxelSetAbstractionforPaintedPoints(nn.Module):
                 # TODO: write Point Proposal Network here
                 # your input should be the variable: sampled points 或batch_dict
                 # TODO: 做好多阶段训练准备，在这里直接使用预训练的模型
-                PPN_model=PointProposalNet(num_object_points=self.model_cfg.NUM_OBJECT_POINTS,num_keypoints=self.model_cfg.NUM_KEYPOINTS,global_feat=False)
-                device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
-                PPN_model=PPN_model.to(device)
-                keypoints=PPN_model(sampled_points)
+                with torch.no_grad():
+                    keypoints=self.PPN_model(batch_dict,is_training=False)
+                    keypoints=keypoints.unsqueeze(0)
             else:
                 raise NotImplementedError
 
