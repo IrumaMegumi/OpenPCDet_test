@@ -1,4 +1,4 @@
-from pcdet.models.backbones_3d.pfe.PointProposal import PointProposalNet
+from pcdet.models.backbones_3d.pfe.PointProposal import PointProposalNet_v2
 from pcdet.datasets import build_dataloader
 import argparse
 from pcdet.config import cfg, cfg_from_yaml_file, log_config_to_file
@@ -97,8 +97,8 @@ def main():
         batch_size=args.batch_size,
         dist=dist_train, workers=args.workers, logger=None, training=False
     )
-    model_dict=torch.load("worst_ppn.pth",map_location=torch.device('cuda'))
-    model=PointProposalNet(num_object_points=6000,num_keypoints=2048)
+    model_dict=torch.load("ppn_with_nan.pth",map_location=torch.device('cuda'))
+    model=PointProposalNet_v2(num_object_points=6000,num_keypoints=2048)
     model.load_state_dict(model_dict['model_state'])
     model.cuda()
     model.eval()
@@ -107,21 +107,20 @@ def main():
         for data_dict in test_loader:
             sampled_points=torch.from_numpy(data_dict['painted_points']).unsqueeze(0)
             sampled_points=sampled_points.to(torch.float32).to('cuda')
-            # keypoints=model(data_dict,is_training=False)
-            # keypoints_xyz=keypoints[:,1:]
-            # keypoints_xyz=keypoints_xyz.cpu().numpy()
+            keypoints=model(data_dict,is_training=False)
+            keypoints_xyz=keypoints[:,1:]
+            keypoints_xyz=keypoints_xyz.cpu().numpy()
             frame_id=data_dict['frame_id'][0]
-            # np.save(f'{frame_id}.npy', keypoints_xyz)
-            cur_pt_idxs = pointnet2_stack_utils.farthest_point_sample(
-                    sampled_points[:, :, 0:3].contiguous(), 2048
-                ).long()
-            if sampled_points.shape[1] < 2048:
-                times = int(2048/ sampled_points.shape[1]) + 1
-                non_empty = cur_pt_idxs[0, :sampled_points.shape[1]]
-                cur_pt_idxs[0] = non_empty.repeat(times)[:2048]
-            keypoints = sampled_points[0][cur_pt_idxs[0]]
-            keypoints_xyz=keypoints[:,1:4].cpu().numpy()
-            np.save(f'{frame_id}_fps.npy', keypoints_xyz)
+            # cur_pt_idxs = pointnet2_stack_utils.farthest_point_sample(
+            #         sampled_points[:, :, 0:3].contiguous(), 2048
+            #     ).long()
+            # if sampled_points.shape[1] < 2048:
+            #     times = int(2048/ sampled_points.shape[1]) + 1
+            #     non_empty = cur_pt_idxs[0, :sampled_points.shape[1]]
+            #     cur_pt_idxs[0] = non_empty.repeat(times)[:2048]
+            # keypoints = sampled_points[0][cur_pt_idxs[0]]
+            # keypoints_xyz=keypoints[:,1:4].cpu().numpy()
+            np.save(f'{frame_id}.npy', keypoints_xyz)
             print("yes")
 if __name__=='__main__':
     main()

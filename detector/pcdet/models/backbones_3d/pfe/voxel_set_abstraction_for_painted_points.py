@@ -6,7 +6,7 @@ import torch.nn as nn
 from ....ops.pointnet2.pointnet2_stack import pointnet2_modules as pointnet2_stack_modules
 from ....ops.pointnet2.pointnet2_stack import pointnet2_utils as pointnet2_stack_utils
 from ....utils import common_utils
-from .PointProposal import PointProposalNet
+from .PointProposal import PointProposalNet_v2
 
 def bilinear_interpolate_torch(im, x, y):
     """
@@ -128,9 +128,12 @@ class VoxelSetAbstractionforPaintedPoints(nn.Module):
         self.model_cfg = model_cfg
         if self.model_cfg.SAMPLE_METHOD=='PPN':
             if self.model_cfg.POINT_SOURCE=='painted_points':
-                self.model_dict=torch.load("worst_ppn.pth",map_location=torch.device('cuda'))
-                self.PPN_model=PointProposalNet(num_object_points=self.model_cfg.NUM_OBJECT_POINTS,num_keypoints=self.model_cfg.NUM_KEYPOINTS,global_feat=False)
+                self.model_dict=torch.load("ppn_v3.pth",map_location=torch.device('cuda'))
+                self.PPN_model=PointProposalNet_v2(num_object_points=self.model_cfg.NUM_OBJECT_POINTS,num_keypoints=self.model_cfg.NUM_KEYPOINTS,global_feat=False)
                 self.PPN_model.load_state_dict(self.model_dict['model_state'])
+                # Freeze the model parameters
+                for param in self.PPN_model.parameters():
+                    param.requires_grad = False
                 self.PPN_model.cuda()
                 self.PPN_model.eval()
             else:
@@ -299,9 +302,8 @@ class VoxelSetAbstractionforPaintedPoints(nn.Module):
                 # TODO: write Point Proposal Network here
                 # your input should be the variable: sampled points 或batch_dict
                 # TODO: 做好多阶段训练准备，在这里直接使用预训练的模型
-                with torch.no_grad():
-                    keypoints=self.PPN_model(batch_dict,is_training=False)
-                    keypoints=keypoints.unsqueeze(0)
+                keypoints=self.PPN_model(batch_dict,is_training=False)
+                keypoints=keypoints.unsqueeze(0)
             else:
                 raise NotImplementedError
 

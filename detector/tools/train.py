@@ -116,9 +116,8 @@ def main():
     )
 
     #训练集模型输出探针检查
-    for data_dict in tqdm(train_loader,desc="Loading training data",leave=False):
-        pass
-
+    # for data_dict in tqdm(train_loader,desc="Loading training data",leave=False):
+    #     pass
     # create test dataloader
     test_set, test_loader, sampler = build_dataloader(
         dataset_cfg=cfg.DATA_CONFIG,
@@ -127,8 +126,8 @@ def main():
         dist=dist_train, workers=args.workers, logger=logger, training=False
     )
     #测试集模型输出探针检查
-    for data_dict in tqdm(test_loader,desc="Loading training data",leave=False):
-        pass
+    # for data_dict in tqdm(test_loader,desc="Loading training data",leave=False):
+    #     pass
     
     model = build_network(model_cfg=cfg.MODEL, num_class=len(cfg.CLASS_NAMES), dataset=train_set)
     if args.sync_bn:

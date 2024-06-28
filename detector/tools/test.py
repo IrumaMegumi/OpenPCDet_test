@@ -193,8 +193,8 @@ def main():
 
     model = build_network(model_cfg=cfg.MODEL, num_class=len(cfg.CLASS_NAMES), dataset=test_set)
     #测试集模型输出探针检查
-    for data_dict in tqdm(test_loader,desc="Loading training data",leave=False):
-        pass
+    # for data_dict in tqdm(test_loader,desc="Loading training data",leave=False):
+    #     pass
     with torch.no_grad():
         if args.eval_all:
             repeat_eval_ckpt(model, test_loader, args, eval_output_dir, logger, ckpt_dir, dist_test=dist_test)
