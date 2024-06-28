@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np 
 from torch.autograd import Variable
+import torch.distributions as dist
 import time
 import pdb
 
@@ -366,7 +367,7 @@ class PointProposalNet_v2(nn.Module):
         batch_size=batch_dict['batch_size']
         #当前batch的损失值总和
         train_loss_batch=0
-        tb_dict_batch={'train_loss':0, 'sample_loss':0, 'task_loss': 0}
+        tb_dict_batch={'train_loss':0, 'sample_loss':0, 'task_loss': 0,'train_loss_backward':0}
         keypoints_list=[]
         #当前batch中每个图片关键点的提取和损失的计算
         for cur_batch in range(batch_size):
@@ -396,23 +397,18 @@ class PointProposalNet_v2(nn.Module):
             #scores: 排序后的得分
             #indices:排序后得分从大到小的索引
             object_points=object_points.permute(0,2,1).squeeze(0)
-            objpoints_with_scores=torch.cat((object_points,scores_final),dim=1)
+            objpoints_with_scores=torch.cat((object_points,scores_final),dim=1) #未排序前的点和未排序得分的级联
             scores, indices = torch.sort(objpoints_with_scores[:, -1], descending=True)
-            #TODO:对objpoints_with_scores使用最后一列排序，然后取索引，利用索引取前2048个点
+            #keypoints_scores: 关键点得分
             keypoints_scores=scores[:self.num_keypoints].unsqueeze(1)
-            # post processing, 注意：scores带梯度，建议和keypoints做一个级联处理
-            object_points=object_points.permute(0,2,1).squeeze(0)
+            # TODO:scores_final用Torch.distributed算概率分布，使用log_prob算对数概率
             #排序后的6000个点
             sorted_points = object_points[indices]
             #取前2048个点作为关键点
             keypoints= sorted_points[:self.num_keypoints, :3]           
             if is_training==True:
-                scores_final=TopKBinaryMaskFunction_v2.apply(scores_final,self.num_keypoints)
-                # scores_final[indices[:self.num_keypoints]]=1
-                # scores_final[indices[self.num_keypoints:]]=0
                 #采用原object_points和编码后的scores_final级联，使采样操作连续
-                encoded_keypoints=torch.cat((object_points[:,:3],scores_final),dim=1)
-                train_loss_cur_batch, tb_dict_cur_batch, disp_dict=self.calculate_loss(encoded_keypoints,object_points[:,:3], scores_final, batch_dict, cur_batch)
+                train_loss_cur_batch, train_loss_backward, tb_dict_cur_batch, disp_dict=self.calculate_loss(keypoints, scores_final, batch_dict, cur_batch)
                 for key,val in tb_dict_cur_batch.items():
                     tb_dict_batch[key]+=val 
                 train_loss_batch+=train_loss_cur_batch
@@ -425,49 +421,53 @@ class PointProposalNet_v2(nn.Module):
             for key,val in tb_dict_batch.items():
                 tb_dict_batch[key]=tb_dict_batch[key]/batch_size
             train_loss_batch=train_loss_batch/batch_size
-            return train_loss_batch, tb_dict_batch, disp_dict
+            train_loss_backward=train_loss_backward/batch_size
+            return train_loss_batch, train_loss_backward, tb_dict_batch, disp_dict
         #返回采样点和采样时提取的原始点特征，后续不确定是否备用
         keypoints=torch.cat(keypoints_list,dim=0)  
         return keypoints
     
     #先写好训练的代码，然后再写loss
-    def calculate_loss(self, encoded_keypoints,object_points, scores_final,batch_dict,cur_batch):
+    def calculate_loss(self, keypoints, scores_final, batch_dict,cur_batch):
+        '''
+        input:
+            keypoints:采样后的关键点xyz坐标
+            scores_final:神经网络输出的得分
+        '''
         disp_dict={}
-        sample_loss, tb_dict=self.calculate_sample_loss(encoded_keypoints, batch_dict,cur_batch)
-        task_loss, tb_dict =self.calculate_task_loss(object_points, scores_final,batch_dict, tb_dict, cur_batch)
+        sample_loss, tb_dict=self.calculate_sample_loss(keypoints, batch_dict, cur_batch)
+        task_loss, tb_dict =self.calculate_task_loss(keypoints, batch_dict, tb_dict, cur_batch)
         loss= 0.7*task_loss+0.3*sample_loss
-        
-        tb_dict.update({'train_loss':loss})
-        return loss, tb_dict, disp_dict
+        #TODO:乘概率密度算平均值
+        scores_final=torch.sigmoid(scores_final)
+        bernoulli_dist = dist.Bernoulli(probs=scores_final)
+        log_prob = bernoulli_dist.log_prob(torch.ones_like(scores_final))
+        loss_backward=torch.mean(log_prob*loss)
+        tb_dict.update({'train_loss':loss,'train_loss_backward':loss_backward})
+        return loss,loss_backward, tb_dict, disp_dict
 
     #点到各个框中心最小的smooth_l1 loss总和除以采样点总数，计算的是当前batch中的一张图
-    def calculate_sample_loss(self, encoded_keypoints, batch_dict, cur_batch):
+    def calculate_sample_loss(self, keypoints, batch_dict, cur_batch):
         '''
         input: keypoints: 当前batch的一张图采样的关键点
         batch_dict: 当前batch的所有数据
         cur_batch: 你想处理当前batch的第几组数据
-        我有点懒，下面所有的Keypoints可以理解为encoded keypoints
-        encoded_points:objpoints_with_score
+        keypoints:关键点，带xyz
         '''
         gt_boxes_center_cur_batch=torch.from_numpy(batch_dict['gt_boxes'][cur_batch,:,:3]).to(self.device) #当前batch中gt_boxes的中心坐标
         mask = gt_boxes_center_cur_batch.sum(dim=1) != 0
         filtered_gt_boxes = gt_boxes_center_cur_batch[mask] #过滤掉全部为0的box
-        keypoints_coord=encoded_keypoints[:,:3]
-        keypoints_is_sampled=encoded_keypoints[:,-1].unsqueeze(1)
-        num_gt_boxes=filtered_gt_boxes.shape[0]
-        num_keypoints=encoded_keypoints.shape[0]
         # 计算所有关键点与所有gt box中心之间的L1距离
-        expanded_keypoints = keypoints_coord.unsqueeze(1).expand(-1, filtered_gt_boxes.size(0), -1)
-        expanded_gt_boxes = filtered_gt_boxes.unsqueeze(0).expand(keypoints_coord.size(0), -1, -1)
-        loss_matrix = F.smooth_l1_loss(expanded_keypoints, expanded_gt_boxes,reduction='none').sum(dim=2)
-        loss_matrix=loss_matrix*keypoints_is_sampled
+        expanded_keypoints = keypoints.unsqueeze(1).expand(-1, filtered_gt_boxes.size(0), -1)
+        expanded_gt_boxes = filtered_gt_boxes.unsqueeze(0).expand(keypoints.size(0), -1, -1)
+        loss_matrix = F.smooth_l1_loss(expanded_keypoints, expanded_gt_boxes,reduction='none')
         min_losses, _ = loss_matrix.min(dim=1)
         avg_min_loss = min_losses.sum()/self.num_keypoints
         tb_dict={'sample_loss': avg_min_loss}
         return avg_min_loss, tb_dict
     
     #近远处点的比例和标准比例差的绝对值
-    def calculate_task_loss(self, object_points, scores_final, batch_dict,tb_dict, cur_batch):
+    def calculate_task_loss(self, keypoints, batch_dict,tb_dict, cur_batch):
         '''
         sorted_object_points:[6000个点特征，score]
         '''
@@ -489,11 +489,10 @@ class PointProposalNet_v2(nn.Module):
             ratio_gtbox_near_far=1
         # ratio_gtbox_near_far=count_1/(count_2+0.01)
         near_far_tensor=torch.where(
-            (torch.abs(object_points[:, 0]) < 35.2) & (torch.abs(object_points[:, 1]) < 20),
+            (torch.abs(keypoints[:, 0]) < 35.2) & (torch.abs(keypoints[:, 1]) < 20),
             torch.tensor(1.0,device=self.device,dtype=torch.float32,requires_grad=True),
             torch.tensor(2.0,device=self.device,dtype=torch.float32,requires_grad=True)
         ).unsqueeze(1)
-        near_far_tensor=scores_final*near_far_tensor
         #损失函数计算的比例：近处点数量/远处点数量 应当接近ground truth中近远处框的比例
         keypoint_near = threshold_function(near_far_tensor, 1).sum()
         keypoint_far = threshold_function(near_far_tensor, 2).sum()

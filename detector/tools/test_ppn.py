@@ -97,7 +97,7 @@ def main():
         batch_size=args.batch_size,
         dist=dist_train, workers=args.workers, logger=None, training=False
     )
-    model_dict=torch.load("worst.pth",map_location=torch.device('cuda'))
+    model_dict=torch.load("worst_ppn.pth",map_location=torch.device('cuda'))
     model=PointProposalNet(num_object_points=6000,num_keypoints=2048)
     model.load_state_dict(model_dict['model_state'])
     model.cuda()

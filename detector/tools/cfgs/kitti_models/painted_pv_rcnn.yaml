@@ -126,8 +126,8 @@ MODEL:
         NUM_KEYPOINTS: 2048
         NUM_OBJECT_POINTS: 6000 #使用PPN时生效
         NUM_OUTPUT_FEATURES: 128
-        SAMPLE_METHOD: FPS
-        #SAMPLE_METHOD: PPN #使用PPN时必须使用PaintedPoints
+        #SAMPLE_METHOD: FPS
+        SAMPLE_METHOD: PPN #使用PPN时必须使用PaintedPoints
 
         FEATURES_SOURCE: ['bev', 'x_conv1', 'x_conv2', 'x_conv3', 'x_conv4', 'painted_points']
         SA_LAYER:

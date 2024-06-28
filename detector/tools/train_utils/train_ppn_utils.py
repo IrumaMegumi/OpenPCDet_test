@@ -6,14 +6,15 @@ import tqdm
 from torch.nn.utils import clip_grad_norm_
 
 
-def ppn_train_one_epoch(model, optimizer, train_loader, test_loader, train_accumulated_iter,val_accumulated_iter,
+def ppn_train_one_epoch(model, optimizer, lr_scheduler,train_loader, test_loader, train_accumulated_iter,val_accumulated_iter,
                     rank, tbar, total_it_each_epoch, total_it_each_epoch_val, dataloader_iter, tb_log=None, leave_pbar=False):
     if total_it_each_epoch == len(train_loader):
         dataloader_iter = iter(train_loader)
     
     #记录每一个epoch的损失
     epoch_loss=0
-    tb_dict_epoch={'sample_loss':0, 'task_loss':0}
+    epoch_loss_backward=0
+    tb_dict_epoch={'sample_loss':0, 'task_loss':0,'train_loss_backward':0}
     if rank == 0:
         pbar = tqdm.tqdm(total=total_it_each_epoch, leave=leave_pbar, desc='train', dynamic_ncols=True)
 
@@ -25,6 +26,7 @@ def ppn_train_one_epoch(model, optimizer, train_loader, test_loader, train_accum
             batch = next(dataloader_iter)
             print('new iters')
 
+        lr_scheduler.step(train_accumulated_iter)
         try:
             cur_lr = float(optimizer.lr)
         except:
@@ -37,23 +39,24 @@ def ppn_train_one_epoch(model, optimizer, train_loader, test_loader, train_accum
         #forward函数调用位置
         # TODO:完善PointProposal中的forward函数
         # disp dict可能要代替
-        train_loss, tb_dict, disp_dict = model(batch,is_training=True)
+        train_loss, train_loss_backward, tb_dict, disp_dict = model(batch,is_training=True)
         # 使用 torchviz 可视化计算图
         # dot = make_dot(train_loss, params=dict(model.named_parameters()))
         # dot.render("simple_model_graph_wrong", format="png")
         #forward函数调用结束
-        train_loss.backward()
+        train_loss_backward.backward()
         clip_grad_norm_(model.parameters(), 10)
         #打印每个参数的梯度
-        for name, param in model.named_parameters():
-            if param.grad is not None:
-                print(name, param.grad)
-            else:
-                print("no grid")
+        # for name, param in model.named_parameters():
+        #     if param.grad is not None:
+        #         print(name, param.grad)
+        #     else:
+        #         print("no grid")
         optimizer.step()
         train_accumulated_iter += 1
-        disp_dict.update({'train_loss': train_loss.item(), 'lr': cur_lr})
+        disp_dict.update({'train_loss_backward': train_loss_backward.item(), 'train_loss':train_loss.item(), 'lr': cur_lr})
         epoch_loss+=train_loss.item()
+        epoch_loss_backward+=train_loss_backward.item()
         # log to console and tensorboard
         if rank == 0:
             pbar.update()
@@ -71,12 +74,13 @@ def ppn_train_one_epoch(model, optimizer, train_loader, test_loader, train_accum
     if rank == 0:
         pbar.close()
     train_epoch_loss=epoch_loss/total_it_each_epoch
+    train_epoch_loss_backward=epoch_loss_backward/total_it_each_epoch
     for key,val in tb_dict_epoch.items():
         tb_dict_epoch[key]=tb_dict_epoch[key]/total_it_each_epoch
 
-    val_accumulated_iter,val_loss,tb_dict_epoch_val=eval_loss(model, test_loader, val_accumulated_iter,
-                    rank, tbar, total_it_each_epoch_val, dataloader_iter, tb_log=tb_log, leave_pbar=False)
-    return train_accumulated_iter,train_epoch_loss,tb_dict_epoch, val_accumulated_iter,val_loss, tb_dict_epoch_val
+    # val_accumulated_iter,val_loss,tb_dict_epoch_val=eval_loss(model, test_loader, val_accumulated_iter,
+    #                 rank, tbar, total_it_each_epoch_val, dataloader_iter, tb_log=tb_log, leave_pbar=False)
+    return train_accumulated_iter,train_epoch_loss,train_epoch_loss_backward, tb_dict_epoch
 
 def eval_loss(model, test_loader, val_accumulated_iter,
                     rank, tbar, total_it_each_epoch_val, dataloader_iter, tb_log=None, leave_pbar=False):
@@ -126,7 +130,7 @@ def eval_loss(model, test_loader, val_accumulated_iter,
         tb_dict_epoch[key]=tb_dict_epoch[key]/total_it_each_epoch_val
     return val_accumulated_iter,val_epoch_loss,tb_dict_epoch
 
-def ppn_train_model(model, optimizer,  train_loader, test_loader, start_iter, start_epoch, total_epochs, 
+def ppn_train_model(model, optimizer, lr_scheduler, train_loader, test_loader, start_iter, start_epoch, total_epochs, 
                     train_sampler, rank, tb_log, ckpt_save_dir, choose_best=True):
     train_accumulated_iter = start_iter
     val_accumulated_iter = start_iter
@@ -139,8 +143,9 @@ def ppn_train_model(model, optimizer,  train_loader, test_loader, start_iter, st
         for cur_epoch in tbar:
             if train_sampler is not None:
                 train_sampler.set_epoch(cur_epoch)
-            train_accumulated_iter,train_loss_of_cur_epoch,tb_dict_train, val_accumulated_iter, val_loss_of_cur_epoch, tb_dict_val= ppn_train_one_epoch(
+            train_accumulated_iter,train_loss_of_cur_epoch, train_loss_of_cur_epoch_backward,tb_dict_train= ppn_train_one_epoch(
                 model, optimizer,
+                lr_scheduler=lr_scheduler,
                 train_loader=train_loader,
                 test_loader=test_loader,
                 train_accumulated_iter=train_accumulated_iter,
@@ -156,9 +161,6 @@ def ppn_train_model(model, optimizer,  train_loader, test_loader, start_iter, st
                 tb_log.add_scalar('train/epoch_train_loss',train_loss_of_cur_epoch,cur_epoch)
                 for key,val in tb_dict_train.items():
                     tb_log.add_scalar('train/'+key,val,cur_epoch)
-                tb_log.add_scalar('val/epoch_val_loss',val_loss_of_cur_epoch,cur_epoch)
-                for key, val in tb_dict_val.items():
-                    tb_log.add_scalar('val'+key,val,cur_epoch)
 
             # save model with choose best，选取最好的模型保存，根据训练集上损失函数最小的保存
             if choose_best:
@@ -166,8 +168,8 @@ def ppn_train_model(model, optimizer,  train_loader, test_loader, start_iter, st
                 best_ckpt_path=str(ckpt_save_dir / 'best')
                 last_ckpt_path=str(ckpt_save_dir / 'last')
                 # save best.pth
-                if val_loss_of_cur_epoch<loss:
-                    loss=val_loss_of_cur_epoch
+                if train_loss_of_cur_epoch<loss:
+                    loss=train_loss_of_cur_epoch
                     save_checkpoint(
                             checkpoint_state(model, optimizer, trained_epoch, val_accumulated_iter), filename=best_ckpt_path,
                         )
