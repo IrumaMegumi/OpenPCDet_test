@@ -140,7 +140,6 @@ class Detector3DTemplate(nn.Module):
         model_info_dict['num_bev_features'] = backbone_2d_module.num_bev_features
         return backbone_2d_module, model_info_dict
 
-    #需要修改这个部分，把所有的点变成painted points
     def build_pfe(self, model_info_dict):
         if self.model_cfg.get('PFE', None) is None:
             return None, model_info_dict
@@ -174,7 +173,7 @@ class Detector3DTemplate(nn.Module):
         model_info_dict['module_list'].append(dense_head_module)
         return dense_head_module, model_info_dict
 
-    #对应的是predicted weighting module，预测点的权重，后续考虑使用pointpainting代替
+    #对应的是predicted weighting module
     def build_point_head(self, model_info_dict):
         if self.model_cfg.get('POINT_HEAD', None) is None:
             return None, model_info_dict

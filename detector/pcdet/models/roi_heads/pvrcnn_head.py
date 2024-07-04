@@ -83,7 +83,7 @@ class PVRCNNHead(RoIHeadTemplate):
         point_coords = batch_dict['point_coords']
         point_features = batch_dict['point_features']
 
-        #加权后点特征，后面的point_cls_scores想踢了，用pointpainting结果作为约束（小约束，前面点采样可以做大约束，需要参考注意力机制），目测效果还很不错......
+        #加权后点特征
         point_features = point_features * batch_dict['point_cls_scores'].view(-1, 1)
 
         #Roi各个网格点 (batch*ROI_num)*num_grids*coords
@@ -93,12 +93,14 @@ class PVRCNNHead(RoIHeadTemplate):
 
         global_roi_grid_points = global_roi_grid_points.view(batch_size, -1, 3)  # (B, Nx6x6x6, 3)
 
+        #point_coord：关键点的xyz坐标
         xyz = point_coords[:, 1:4]
         xyz_batch_cnt = xyz.new_zeros(batch_size).int()
         batch_idx = point_coords[:, 0]
         for k in range(batch_size):
             xyz_batch_cnt[k] = (batch_idx == k).sum()
 
+        #new_xyz：我看不懂
         new_xyz = global_roi_grid_points.view(-1, 3)
         new_xyz_batch_cnt = xyz.new_zeros(batch_size).int().fill_(global_roi_grid_points.shape[1])
 

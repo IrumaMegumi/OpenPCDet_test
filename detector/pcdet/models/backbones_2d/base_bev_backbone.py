@@ -85,6 +85,7 @@ class BaseBEVBackbone(nn.Module):
                 spatial_features
         Returns:
         """
+        print("**************************backbone 2d***********************\n")
         spatial_features = data_dict['spatial_features']
         ups = []
         ret_dict = {}

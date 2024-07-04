@@ -239,14 +239,15 @@ class DatasetTemplate(torch_data.Dataset):
         data_dict = defaultdict(list)
         #对near的判断建议加在这里
         for batch_msg in batch_list:
-            num_objects=batch_msg['gt_boxes'].shape[0]
-            is_near_list=[]
-            for object in range(num_objects):
-                if abs(batch_msg['gt_boxes'][object][0])<35.2 and abs(batch_msg['gt_boxes'][object][1])<20:
-                    is_near_list.append([1])
-                else:
-                    is_near_list.append([2])
-            batch_msg['near']=np.array(is_near_list)
+            if 'gt_boxes' in batch_msg.keys():
+                num_objects=batch_msg['gt_boxes'].shape[0]
+                is_near_list=[]
+                for object in range(num_objects):
+                    if abs(batch_msg['gt_boxes'][object][0])<35.2 and abs(batch_msg['gt_boxes'][object][1])<20:
+                        is_near_list.append([1])
+                    else:
+                        is_near_list.append([2])
+                batch_msg['near']=np.array(is_near_list)
         for cur_sample in batch_list:
             for key, val in cur_sample.items():
                 data_dict[key].append(val)

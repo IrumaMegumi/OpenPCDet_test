@@ -17,6 +17,7 @@ from pcdet.utils import common_utils
 from tools.train_utils.optimization import build_optimizer, build_scheduler
 from tools.train_utils.train_utils import train_model
 from tqdm import tqdm
+import numpy as np 
 
 def parse_config():
     parser = argparse.ArgumentParser(description='arg parser')
@@ -164,9 +165,9 @@ def main():
         last_epoch=last_epoch, optim_cfg=cfg.OPTIMIZATION
     )
     
-    for name, param in model.named_parameters():
-        if param.requires_grad:
-            print(f"{name}: {param.shape}")
+    # for name, param in model.named_parameters():
+    #     if param.requires_grad:
+    #         print(f"{name}: {param.shape}")
     # -----------------------start training---------------------------
     logger.info('**********************Start training %s/%s(%s)**********************'
                 % (cfg.EXP_GROUP_PATH, cfg.TAG, args.extra_tag))

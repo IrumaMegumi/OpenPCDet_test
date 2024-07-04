@@ -51,7 +51,7 @@ class PointHeadTemplate(nn.Module):
                              set_ignore_flag=True, use_ball_constraint=False, central_radius=2.0):
         """
         Args:
-            points: (N1 + N2 + N3 + ..., 4) [bs_idx, x, y, z]
+            points: (N1 + N2 + N3 + ..., 4) [bs_idx, x, y, z],是关键点
             gt_boxes: (B, M, 8)
             extend_gt_boxes: [B, M, 8]
             ret_box_labels:

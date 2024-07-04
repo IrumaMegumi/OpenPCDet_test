@@ -229,8 +229,8 @@ class PaintedKittiDataset(DatasetTemplate):
             info = infos[k]
             sample_idx = info['point_cloud']['lidar_idx']
             #TODO: 待定
-            #points = self.get_lidar(sample_idx)
-            points = self.get_painted_lidar(sample_idx)
+            points = self.get_lidar(sample_idx)
+            painted_points = self.get_painted_lidar(sample_idx)
             ## TODO: 待定选择哪个
             annos = info['annos']
             names = annos['name']
@@ -239,23 +239,37 @@ class PaintedKittiDataset(DatasetTemplate):
             gt_boxes = annos['gt_boxes_lidar']
 
             num_obj = gt_boxes.shape[0]
+
             point_indices = roiaware_pool3d_utils.points_in_boxes_cpu(
                 torch.from_numpy(points[:, 0:3]), torch.from_numpy(gt_boxes)
             ).numpy()  # (nboxes, npoints)
 
+            painted_point_indices = roiaware_pool3d_utils.points_in_boxes_cpu(
+                torch.from_numpy(painted_points[:, 0:3]), torch.from_numpy(gt_boxes)
+            ).numpy()  # (nboxes, npoints)
+
             for i in range(num_obj):
                 filename = '%s_%s_%d.bin' % (sample_idx, names[i], i)
+                filename_painted = '%s_%s_%d_painted.bin' % (sample_idx, names[i], i)
                 filepath = database_save_path / filename
-                gt_points = points[point_indices[i] > 0].astype(np.float32)
+                filepath_painted = database_save_path/filename_painted
 
+                gt_points = points[point_indices[i] > 0].astype(np.float32)
                 gt_points[:, :3] -= gt_boxes[i, :3]
+
+                gt_painted_points = painted_points[painted_point_indices[i] > 0].astype(np.float32)
+                gt_painted_points[:, :3] -= gt_boxes[i, :3]
+                
                 with open(filepath, 'w') as f:
                     gt_points.tofile(f)
+                with open(filepath_painted,'w') as f:
+                    gt_painted_points.tofile(f)
 
                 if (used_classes is None) or names[i] in used_classes:
                     db_path = str(filepath.relative_to(self.root_path))  # gt_database/xxxxx.bin
-                    db_info = {'name': names[i], 'path': db_path, 'image_idx': sample_idx, 'gt_idx': i,
-                               'box3d_lidar': gt_boxes[i], 'num_points_in_gt': gt_points.shape[0],
+                    db_painted_path= str(filepath_painted.relative_to(self.root_path))
+                    db_info = {'name': names[i], 'path': db_path, 'painted_path': db_painted_path, 'image_idx': sample_idx, 'gt_idx': i,
+                               'box3d_lidar': gt_boxes[i], 'num_painted_points_in_gt': gt_painted_points.shape[0], 'num_points_in_gt': gt_points.shape[0],
                                'difficulty': difficulty[i], 'bbox': bbox[i], 'score': annos['score'][i]}
                     if names[i] in all_db_infos:
                         all_db_infos[names[i]].append(db_info)

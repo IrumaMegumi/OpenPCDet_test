@@ -7,7 +7,8 @@ import tqdm
 
 from pcdet.models import load_data_to_gpu
 from pcdet.utils import common_utils
-
+import open3d
+from tools.visual_utils import open3d_vis_utils as V
 
 def statistics_info(cfg, ret_dict, metric, disp_dict):
     for cur_thresh in cfg.MODEL.POST_PROCESSING.RECALL_THRESH_LIST:
@@ -159,6 +160,10 @@ def eval_mAP(cfg,model,dataloader, file_name, logger, dist_test=False, save_to_f
         load_data_to_gpu(batch_dict)
         with torch.no_grad():
             pred_dicts, ret_dict = model(batch_dict)
+            V.draw_scenes(
+                points=batch_dict['points'][:, 1:], ref_boxes=pred_dicts[0]['pred_boxes'],
+                ref_scores=pred_dicts[0]['pred_scores'], ref_labels=pred_dicts[0]['pred_labels']
+            )
         disp_dict = {}
 
         statistics_info(cfg, ret_dict, metric, disp_dict)

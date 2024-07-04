@@ -381,7 +381,8 @@ class DataBaseSampler(object):
             )
             data_dict.pop('calib')
             data_dict.pop('road_plane')
-        obj_points_list = []
+        obj_painted_points_list = []
+        obj_points_list=[]
 
         # convert sampled 3D boxes to image plane
         img_aug_gt_dict = self.initilize_image_aug_dict(data_dict, gt_boxes_mask)
@@ -394,56 +395,88 @@ class DataBaseSampler(object):
         for idx, info in enumerate(total_valid_sampled_dict):
             if self.use_shared_memory:
                 start_offset, end_offset = info['global_data_offset']
-                obj_points = copy.deepcopy(gt_database_data[start_offset:end_offset])
+                obj_painted_points = copy.deepcopy(gt_database_data[start_offset:end_offset])
             else:
+                # process for painted points
+                file_path_painted = self.root_path / info['painted_path']
+                obj_painted_points = np.fromfile(str(file_path_painted), dtype=np.float32).reshape(
+                    [-1, self.sampler_cfg.NUM_PAINTED_POINT_FEATURES])
+                if obj_painted_points.shape[0] != info['num_painted_points_in_gt']:
+                    obj_painted_points = np.fromfile(str(file_path_painted), dtype=np.float64).reshape(-1, self.sampler_cfg.NUM_PAINTED_POINT_FEATURES)
+                
+                #process for original points
                 file_path = self.root_path / info['path']
                 obj_points = np.fromfile(str(file_path), dtype=np.float32).reshape(
                     [-1, self.sampler_cfg.NUM_POINT_FEATURES])
                 if obj_points.shape[0] != info['num_points_in_gt']:
-                    obj_points = np.fromfile(str(file_path), dtype=np.float64).reshape(-1, self.sampler_cfg.NUM_POINT_FEATURES)
+                    obj_points = np.fromfile(str(file_path_painted), dtype=np.float64).reshape(-1, self.sampler_cfg.NUM_POINT_FEATURES)
+            
             assert obj_points.shape[0] == info['num_points_in_gt']
+            assert obj_painted_points.shape[0] == info['num_painted_points_in_gt']
+
             obj_points[:, :3] += info['box3d_lidar'][:3].astype(np.float32)
+            obj_painted_points[:, :3]+=info['box3d_lidar'][:3].astype(np.float32)
 
             if self.sampler_cfg.get('USE_ROAD_PLANE', False):
                 # mv height
+                obj_painted_points[:,2]-=mv_height[idx]
                 obj_points[:, 2] -= mv_height[idx]
 
+            #实际上它就是None，因此这个if会pass
             if self.img_aug_type is not None:
                 img_aug_gt_dict, obj_points = self.collect_image_crops(
                     img_aug_gt_dict, info, data_dict, obj_points, sampled_gt_boxes, sampled_gt_boxes2d, idx
                 )
+                img_aug_gt_dict_painted, obj_painted_points =self.collect_image_crops(
+                    img_aug_gt_dict, info, data_dict, obj_painted_points, sampled_gt_boxes, sampled_gt_boxes2d, idx
+                )
 
             obj_points_list.append(obj_points)
+            obj_painted_points_list.append(obj_painted_points)
+
         obj_points = np.concatenate(obj_points_list, axis=0)
+        obj_painted_points= np.concatenate(obj_painted_points_list, axis=0)
+
         sampled_gt_names = np.array([x['name'] for x in total_valid_sampled_dict])
 
-        if self.sampler_cfg.get('FILTER_OBJ_POINTS_BY_TIMESTAMP', False) or obj_points.shape[-1] != points.shape[-1]:
+        #这个if理论上也会pass
+        if self.sampler_cfg.get('FILTER_OBJ_POINTS_BY_TIMESTAMP', False) or obj_painted_points.shape[-1] != painted_points.shape[-1] or obj_points.shape[-1]!=points.shape[-1]:
             if self.sampler_cfg.get('FILTER_OBJ_POINTS_BY_TIMESTAMP', False):
                 min_time = min(self.sampler_cfg.TIME_RANGE[0], self.sampler_cfg.TIME_RANGE[1])
                 max_time = max(self.sampler_cfg.TIME_RANGE[0], self.sampler_cfg.TIME_RANGE[1])
             else:
-                assert obj_points.shape[-1] == points.shape[-1] + 1
+                assert obj_points.shape[-1] == painted_points.shape[-1] + 1
+                assert obj_painted_points.shape[-1] == points.shape[-1] + 1
                 # transform multi-frame GT points to single-frame GT points
                 min_time = max_time = 0.0
 
+            #ignore the errors here
             time_mask = np.logical_and(obj_points[:, -1] < max_time + 1e-6, obj_points[:, -1] > min_time - 1e-6)
             obj_points = obj_points[time_mask]
+            # ignore ended
+
         large_sampled_gt_boxes = box_utils.enlarge_box3d(
             sampled_gt_boxes[:, 0:7], extra_width=self.sampler_cfg.REMOVE_EXTRA_WIDTH
         )
         points = box_utils.remove_points_in_boxes3d(points, large_sampled_gt_boxes)
+
         if painted_points is not None:
             painted_points=box_utils.remove_points_in_boxes3d(painted_points,large_sampled_gt_boxes)
-        points = np.concatenate([obj_points[:, :points.shape[-1]], points], axis=0)
+
+        painted_points = np.concatenate([obj_painted_points[:, :painted_points.shape[-1]], painted_points], axis=0)
+        points = np.concatenate([obj_painted_points[:, :points.shape[-1]], points], axis=0)
+
         gt_names = np.concatenate([gt_names, sampled_gt_names], axis=0)
         gt_boxes = np.concatenate([gt_boxes, sampled_gt_boxes], axis=0)
         data_dict['gt_boxes'] = gt_boxes
         data_dict['gt_names'] = gt_names
         data_dict['points'] = points
         data_dict['painted_points']=painted_points
+
+        #这个也会跳过去
         if self.img_aug_type is not None:
             data_dict = self.copy_paste_to_image(img_aug_gt_dict, data_dict, points)
-
+            data_dict = self.copy_paste_to_image(img_aug_gt_dict_painted, data_dict, painted_points)
         return data_dict
 
     def __call__(self, data_dict):
@@ -499,8 +532,20 @@ class DataBaseSampler(object):
                 data_dict, sampled_gt_boxes, total_valid_sampled_dict, sampled_mv_height, sampled_gt_boxes2d
             )
         data_dict.pop('gt_boxes_mask')
+        #check_results=self.check_data(data_dict)
         return data_dict
     
+    def check_data(self,data_dict):
+        points=data_dict["points"][:,:3]
+        painted_points=data_dict['painted_points'][:,:3]
+        def arrays_are_contained(set_array1, array2):
+            for sub_array in array2:
+                if tuple(sub_array) not in set_array1:
+                    return False
+            return True
+        result=arrays_are_contained(points,painted_points)
+        print(result)
+        return result
     '''
     def __call__(self, data_dict):
         """

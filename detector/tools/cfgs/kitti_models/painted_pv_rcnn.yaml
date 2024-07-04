@@ -18,6 +18,7 @@ DATA_CONFIG:
               }
 
               SAMPLE_GROUPS: ['Car:15','Pedestrian:10', 'Cyclist:10']
+              NUM_PAINTED_POINT_FEATURES: 8
               NUM_POINT_FEATURES: 4
               DATABASE_WITH_FAKELIDAR: False
               REMOVE_EXTRA_WIDTH: [0.0, 0.0, 0.0]
@@ -122,16 +123,19 @@ MODEL:
     PFE:
         NAME: VoxelSetAbstractionforPaintedPoints
         #只能是raw_points和painted_points
-        POINT_SOURCE: painted_points 
+        # TODO: keypoint source是painted points，剩余用原始点云
+        KEYPOINT_SOURCE: painted_points 
         NUM_KEYPOINTS: 2048
         NUM_OBJECT_POINTS: 6000 #使用PPN时生效
         NUM_OUTPUT_FEATURES: 128
         #SAMPLE_METHOD: FPS
         SAMPLE_METHOD: PPN #使用PPN时必须使用PaintedPoints
 
-        FEATURES_SOURCE: ['bev', 'x_conv1', 'x_conv2', 'x_conv3', 'x_conv4', 'painted_points']
+        PFE_POINT_SOURCE: raw_points
+        #由于PV-RCNN擅长学习空间特征，因此为防止空间特征不足，painted_points将只会用于PPN的提议，剩下将没有任何作用
+        FEATURES_SOURCE: ['bev', 'x_conv1', 'x_conv2', 'x_conv3', 'x_conv4', 'raw_points']
         SA_LAYER:
-            painted_points:
+            raw_points:
                 MLPS: [[16, 16], [16, 16]]
                 POOL_RADIUS: [0.4, 0.8]
                 NSAMPLE: [16, 16]
@@ -156,6 +160,7 @@ MODEL:
                 POOL_RADIUS: [2.4, 4.8]
                 NSAMPLE: [16, 32]
 
+    #TODO: 查roi-grid pooling module在哪，适配一下我的PPN部分
     POINT_HEAD:
         NAME: PointHeadSimple
         CLS_FC: [256, 256]

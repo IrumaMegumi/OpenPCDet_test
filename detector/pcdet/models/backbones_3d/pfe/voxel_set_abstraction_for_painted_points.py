@@ -127,8 +127,8 @@ class VoxelSetAbstractionforPaintedPoints(nn.Module):
         super().__init__()
         self.model_cfg = model_cfg
         if self.model_cfg.SAMPLE_METHOD=='PPN':
-            if self.model_cfg.POINT_SOURCE=='painted_points':
-                self.model_dict=torch.load("ppn_v3.pth",map_location=torch.device('cuda'))
+            if self.model_cfg.KEYPOINT_SOURCE=='painted_points':
+                self.model_dict=torch.load("ppn.pth",map_location=torch.device('cuda'))
                 self.PPN_model=PointProposalNet_v2(num_object_points=self.model_cfg.NUM_OBJECT_POINTS,num_keypoints=self.model_cfg.NUM_KEYPOINTS,global_feat=False)
                 self.PPN_model.load_state_dict(self.model_dict['model_state'])
                 # Freeze the model parameters
@@ -178,6 +178,7 @@ class VoxelSetAbstractionforPaintedPoints(nn.Module):
             self.SA_rawpoints, cur_num_c_out = pointnet2_stack_modules.build_local_aggregation_module(
                 input_channels=num_rawpoint_features - 3, config=SA_cfg['raw_points']
             )
+            c_in += cur_num_c_out
         #painted_points特征点融合进去，注意：这里只是融合的特征，后面可能要改动为PPN
         elif 'painted_points' in self.model_cfg.FEATURES_SOURCE:
             self.SA_rawpoints,cur_num_c_out = pointnet2_stack_modules.build_local_aggregation_module(
@@ -254,10 +255,10 @@ class VoxelSetAbstractionforPaintedPoints(nn.Module):
             keypoints: (N1 + N2 + ..., 4), where 4 indicates [bs_idx, x, y, z]
         """
         batch_size = batch_dict['batch_size']
-        if self.model_cfg.POINT_SOURCE == 'raw_points':
+        if self.model_cfg.KEYPOINT_SOURCE == 'raw_points':
             src_points = batch_dict['points'][:, 1:4]
             batch_indices = batch_dict['points'][:, 0].long()
-        elif self.model_cfg.POINT_SOURCE == 'voxel_centers':
+        elif self.model_cfg.KEYPOINT_SOURCE == 'voxel_centers':
             src_points = common_utils.get_voxel_centers(
                 batch_dict['voxel_coords'][:, 1:4],
                 downsample_times=1,
@@ -267,7 +268,7 @@ class VoxelSetAbstractionforPaintedPoints(nn.Module):
             batch_indices = batch_dict['voxel_coords'][:, 0].long()
         #根据你是否使用PPN取painted points
         #TODO：写PPN部分
-        elif self.model_cfg.POINT_SOURCE=='painted_points':
+        elif self.model_cfg.KEYPOINT_SOURCE=='painted_points':
             if self.model_cfg.SAMPLE_METHOD=='PPN':  # point proposal network
                 src_points=batch_dict['painted_points']
             else:
@@ -405,7 +406,6 @@ class VoxelSetAbstractionforPaintedPoints(nn.Module):
 
         if 'raw_points' in self.model_cfg.FEATURES_SOURCE:
             raw_points = batch_dict['points']
-
             pooled_features = self.aggregate_keypoint_features_from_one_source(
                 batch_size=batch_size, aggregate_func=self.SA_rawpoints,
                 xyz=raw_points[:, 1:4],
